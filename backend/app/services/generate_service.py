@@ -119,6 +119,8 @@ class GenerateService:
             return self._generate_with_openai(prompt, model, temperature, max_tokens)
         elif provider == "deepseek":
             return self._generate_with_deepseek(prompt, model, temperature, max_tokens)
+        elif provider == "siliconflow":
+            return self._generate_with_deepseek(prompt, model, temperature, max_tokens)            
         else:
             raise ValueError(f"不支持的提供商: {provider}")
     
@@ -267,6 +269,9 @@ class GenerateService:
         elif provider == "ollama":
             async for text_chunk in self._stream_with_ollama(full_prompt, model, temperature, max_tokens):
                 yield text_chunk
+        elif provider == "siliconflow":
+            async for text_chunk in self._stream_with_ollama(full_prompt, model, temperature, max_tokens):
+                yield text_chunk                
         else:
             raise ValueError(f"不支持的提供商: {provider}")
     

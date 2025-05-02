@@ -20,7 +20,6 @@ def get_config_path() -> Path:
 
 @router.get("/config")
 def get_config():
-    print("[DEBUG] get_config() called")
     try:
         config_path = get_config_path()
         with config_path.open("r", encoding="utf-8") as f:

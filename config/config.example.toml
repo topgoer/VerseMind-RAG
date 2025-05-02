@@ -1,104 +1,132 @@
-# Global LLM configuration
 [llm]
-model = "claude-3-7-sonnet-20250219"       # The LLM model to use
-base_url = "https://api.anthropic.com/v1/" # API endpoint URL
-api_key = "YOUR_API_KEY"                   # Your API key
-max_tokens = 8192                          # Maximum number of tokens in the response
-temperature = 0.0                          # Controls randomness
+api_type = "ollama"
+model = "gemma3:4b"
+base_url = "http://localhost:11434"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.7
 
-# [llm] # Amazon Bedrock
-# api_type = "aws"                                       # Required
-# model = "us.anthropic.claude-3-7-sonnet-20250219-v1:0" # Bedrock supported modelID
-# base_url = "bedrock-runtime.us-west-2.amazonaws.com"   # Not used now
-# max_tokens = 8192
-# temperature = 1.0
-# api_key = "bear"                                       # Required but not used for Bedrock
+[llm.deepseek_ollama]
+api_type = "ollama"
+model = "deepseek-r1:8b"
+base_url = "http://localhost:11434"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.7
 
-# [llm] #AZURE OPENAI:
-# api_type= 'azure'
-# model = "YOUR_MODEL_NAME" #"gpt-4o-mini"
-# base_url = "{YOUR_AZURE_ENDPOINT.rstrip('/')}/openai/deployments/{AZURE_DEPLOYMENT_ID}"
-# api_key = "AZURE API KEY"
-# max_tokens = 8096
-# temperature = 0.0
-# api_version="AZURE API VERSION" #"2024-08-01-preview"
+[llm.deepseek_v3]
+api_type = "openai"
+model = "deepseek-chat"
+base_url = "https://api.deepseek.com/v1"
+api_key = "YOUR_API_KEY"
+max_tokens = 4096
+temperature = 0.7
 
-# [llm] #OLLAMA:
-# api_type = 'ollama'
-# model = "llama3.2"
-# base_url = "http://localhost:11434/v1"
-# api_key = "ollama"
-# max_tokens = 4096
-# temperature = 0.0
+[llm.deepseek_r1]
+api_type = "openai"
+model = "deepseek-reasoner"
+base_url = "https://api.deepseek.com/v1"
+api_key = "YOUR_API_KEY"
+max_tokens = 4096
+temperature = 0.7
 
-# Ollama Models Configuration
-# This section allows configuring available Ollama models with proper descriptions
-# Global LLM configuration
+[llm.llama3_2-vision]
+api_type = "ollama"
+model = "llama3.2-vision:latest"
+base_url = "http://localhost:11434"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.7
+api_version = ""
 
-[llm.vision] #OLLAMA VISION:
-api_type = 'ollama'
-model = "llama3.2-vision"                                          # The vision model to use
-base_url = "http://localhost:11434/v1"                             # API endpoint URL for vision model
-api_key = "ollama"                                                 # Your API key for vision model
-max_tokens = 4096                                                  # Maximum number of tokens in the response
-temperature = 0.0                                                  # Controls randomness for vision model
+[llm.gemma3]
+api_type = "ollama"
+model = "gemma3:4b"
+base_url = "http://localhost:11434"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.7
 
-# [llm.vision] #OLLAMA VISION:
-# api_type = 'ollama'
-# model = "llama3.2-vision"
-# base_url = "http://localhost:11434/v1"
-# api_key = "ollama"
-# max_tokens = 4096
-# temperature = 0.0
+[llm.phi4]
+api_type = "ollama"
+model = "phi4:latest"
+base_url = "http://localhost:11434"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.7
 
-# Optional configuration for specific browser configuration
-# [browser]
-# Whether to run browser in headless mode (default: false)
-#headless = false
-# Disable browser security features (default: true)
-#disable_security = true
-# Extra arguments to pass to the browser
-#extra_chromium_args = []
-# Path to a Chrome instance to use to connect to your normal browser
-# e.g. '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-#chrome_instance_path = ""
-# Connect to a browser instance via WebSocket
-#wss_url = ""
-# Connect to a browser instance via CDP
-#cdp_url = ""
+[llm.qwen3_8b]
+api_type = "ollama"
+model = "qwen3:8b"
+base_url = "http://localhost:11434"
+api_key = "ollama"
+max_tokens = 4096
+temperature = 0.7
 
-# Optional configuration, Proxy settings for the browser
-# [browser.proxy]
-# server = "http://proxy-server:port"
-# username = "proxy-username"
-# password = "proxy-password"
+[llm.Qwen_siliconflow]
+model = "Qwen/QwQ-32B"
+base_url = "https://api.siliconflow.cn/v1"
+api_key = "YOUR_API_KEY"
+max_tokens = 8192   
+temperature = 0.0
+api_type = "api"
 
-# Optional configuration, Search settings.
-# [search]
-# Search engine for agent to use. Default is "Google", can be set to "Baidu" or "DuckDuckGo" or "Bing".
-#engine = "Google"
-# Fallback engine order. Default is ["DuckDuckGo", "Baidu", "Bing"] - will try in this order after primary engine fails.
-#fallback_engines = ["DuckDuckGo", "Baidu", "Bing"]
-# Seconds to wait before retrying all engines again when they all fail due to rate limits. Default is 60.
-#retry_delay = 60
-# Maximum number of times to retry all engines when all fail. Default is 3.
-#max_retries = 3
-# Language code for search results. Options: "en" (English), "zh" (Chinese), etc.
-#lang = "en"
-# Country code for search results. Options: "us" (United States), "cn" (China), etc.
-#country = "us"
+[llm.gpt_4o]
+api_type = "openai"
+model = "gpt-4o"
+base_url = "https://api.openai.com/v1"
+api_key = "YOUR_API_KEY"
+max_tokens = 8192
+temperature = 0.7
+
+[llm.gpt_3_5_turbo]
+api_type = "openai"
+model = "gpt-3.5-turbo"
+base_url = "https://api.openai.com/v1"
+api_key = "YOUR_API_KEY"
+max_tokens = 4096
+temperature = 0.7
+
+[model_groups]
+ollama = [
+    { id = "qwen3:8b", name = "Qwen3 8b", config_key = "llm.qwen3_8b" },    
+    { id = "gemma3:4b", name = "Gemma3 4b", config_key = "llm.gemma3" },
+    { id = "deepseek-r1:8b", name = "DeepSeek R1 8b", config_key = "llm.deepseek_ollama" },
+    { id = "phi4", name = "Phi-4", config_key = "llm.phi4" },
+    { id = "mistral:latest", name = "Mistral", config_key = "llm.mistral" },    
+    { id = "llama3.2-vision", name = "Llama 3.2 Vision", config_key = "llm.llama3_2_vision" }
+]
+
+openai = [
+    { id = "gpt-4o", name = "GPT-4o", config_key = "llm.gpt_4o" },
+    { id = "gpt-3.5-turbo", name = "GPT-3.5 Turbo", config_key = "llm.gpt_3_5_turbo" }
+]
+
+deepseek = [
+    { id = "deepseek-chat", name = "DeepSeek Chat", config_key = "llm.deepseek_v3" },
+    { id = "deepseek-reasoner", name = "DeepSeek-r1", config_key = "llm.deepseek_r1" }
+]
+
+siliconflow = [
+    { id = "Qwen/QwQ-32B", name = "Qwen-32b", config_key = "llm.Qwen_siliconflow" }
+]
+
+[embedding_models]
+ollama = [
+    { id = "bge-m3:latest", name = "BGE-m3", dimensions = 1024 },
+    { id = "BGE-large:latest", name = "BGE-Large", dimensions = 1024 }
+]
+
+[vector_databases]
+faiss = { name = "FAISS", description = "Facebook AI Similarity Search", local = true }
+
+chroma = { name = "Chroma", description = "Chroma Vector Database", local = true }
+
+[app]
+name = "VerseMind-RAG"
+version = "1.0.0"
+description = "Where Poetry Meets AI"
+default_language = "en"
 
 
-## Sandbox configuration
-#[sandbox]
-#use_sandbox = false
-#image = "python:3.12-slim"
-#work_dir = "/workspace"
-#memory_limit = "1g"  # 512m
-#cpu_limit = 2.0
-#timeout = 300
-#network_enabled = true
 
-# MCP (Model Context Protocol) configuration
-[mcp]
-server_reference = "app.mcp.server" # default server module reference
