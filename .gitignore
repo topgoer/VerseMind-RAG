@@ -1,0 +1,10 @@
+# 忽略临时和本地配置文件
+Temp/
+*.pyc
+__pycache__/
+.env
+.DS_Store
+*.bak
+node_modules/
+dist/
+storage/
