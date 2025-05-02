@@ -10,7 +10,6 @@ function Header() {
         <div className="flex flex-col items-center justify-center text-center">
           <h1 className="text-2xl font-bold">{t('appTitle')}</h1>
           <div className="text-2xl font-bold mt-2">{t('appSlogan')}</div>
-          <span className="mt-2 text-sm bg-purple-600 px-2 py-1 rounded-full">{t('demoVersion')}</span>
         </div>
         <div className="absolute top-6 right-6">
           <button 

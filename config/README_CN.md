@@ -1,29 +1,29 @@
-# VerseMind-RAG Configuration Guide
+# VerseMind-RAG 配置指南
 
-## Overview
+## 概述
 
-VerseMind-RAG uses a centralized TOML-based configuration system. All model, group, embedding, and vector database settings are managed in `config/config.toml`. The backend loads this file and exposes configuration to the frontend via the `/api/config` endpoint, ensuring a single source of truth for the entire system.
+VerseMind-RAG 采用集中式 TOML 配置系统。所有模型、分组、嵌入、向量库等设置均在 `config/config.toml` 统一管理。后端启动时加载该文件，并通过 `/api/config` 接口向前端提供配置，实现全局单一配置源。
 
-## File Location
+## 文件位置
 
-Configuration file:
+主配置文件：
 ```
 config/config.toml
 ```
-Template/example:
+模板示例：
 ```
 config/config.example.toml
 ```
-> **Note:** Only `config.example.toml` should be committed to GitHub. `config.toml` may contain sensitive keys and should be listed in `.gitignore`.
+> **注意：** 仅 `config.example.toml` 应提交到 GitHub，`config.toml` 可能包含敏感信息，应加入 `.gitignore`。
 
-## Configuration Flow
-- **Backend**: Loads `config/config.toml` at startup and serves it via `/api/config`.
-- **Frontend**: Fetches `/api/config` and uses the returned JSON to render model selectors and other options.
-- **Update**: Edit `config/config.toml` and restart the backend to apply changes. The frontend will reflect updates automatically.
+## 配置流程
+- **后端**：启动时加载 `config/config.toml`，并通过 `/api/config` 提供给前端。
+- **前端**：启动时请求 `/api/config`，用返回的 JSON 渲染模型选择等。
+- **更新**：编辑 `config/config.toml` 并重启后端，前端会自动反映新配置。
 
-## config.toml Structure (Example)
+## config.toml 结构（示例）
 
-### 1. LLM Model Settings
+### 1. LLM 模型设置
 ```toml
 [llm]
 api_type = "ollama"
@@ -115,7 +115,7 @@ max_tokens = 4096
 temperature = 0.7
 ```
 
-### 2. Model Groups (for UI selection)
+### 2. 模型分组（用于前端下拉选择）
 ```toml
 [model_groups]
 ollama = [
@@ -139,7 +139,7 @@ siliconflow = [
 ]
 ```
 
-### 3. Embedding Models
+### 3. 嵌入模型
 ```toml
 [embedding_models]
 ollama = [
@@ -148,14 +148,14 @@ ollama = [
 ]
 ```
 
-### 4. Vector Databases
+### 4. 向量数据库
 ```toml
 [vector_databases]
 faiss = { name = "FAISS", description = "Facebook AI Similarity Search", local = true }
 chroma = { name = "Chroma", description = "Chroma Vector Database", local = true }
 ```
 
-### 5. App Info
+### 5. 应用信息
 ```toml
 [app]
 name = "VerseMind-RAG"
@@ -164,28 +164,28 @@ description = "Where Poetry Meets AI"
 default_language = "en"
 ```
 
-## How to Edit Configuration
-1. Edit `config/config.toml` as needed.
-2. Save the file.
-3. Restart the backend server for changes to take effect.
-4. The frontend will automatically reflect the new configuration.
+## 如何编辑配置
+1. 按需编辑 `config/config.toml`。
+2. 保存文件。
+3. 重启后端服务使配置生效。
+4. 前端会自动反映新配置。
 
-## Adding a New Model
-1. Add a new `[llm.model_key]` section with all required fields.
-2. Add an entry to the appropriate `[model_groups]` array, referencing the new model's `config_key`.
-3. (Optional) Add embedding model or vector DB settings if needed.
+## 新增模型的步骤
+1. 新增 `[llm.模型key]` 配置段，填写所有必需字段。
+2. 在对应 `[model_groups]` 分组数组中添加一项，`config_key` 指向新模型。
+3. （可选）如需嵌入模型或向量库，也可补充相关配置。
 
-## Best Practices
-- **Never commit `config/config.toml` to GitHub**. Use `config.example.toml` as a public template.
-- **Keep API keys and secrets out of version control**.
-- **Document each model and group** with comments for clarity.
-- **Restart backend after any config change**.
-- **Validate TOML syntax** to avoid backend startup errors.
+## 最佳实践
+- **切勿将 `config/config.toml` 提交到 GitHub**，请用 `config.example.toml` 作为公开模板。
+- **API 密钥、敏感信息不要出现在版本库中**。
+- **建议用注释说明每个模型和分组**，便于团队协作。
+- **每次修改配置后需重启后端**。
+- **编辑后建议用 TOML 校验工具检查语法**，避免启动报错。
 
-## Troubleshooting
-- If the frontend shows only default models, check for errors in the backend log and ensure `config.toml` is valid.
-- If `/api/config` returns a 500 error, check for missing or malformed config fields.
-- Use the example file as a reference for correct structure.
+## 常见问题排查
+- 如果前端只显示默认模型，检查后端日志和 `config.toml` 是否有效。
+- 如果 `/api/config` 返回 500，检查配置字段是否缺失或格式错误。
+- 可参考 `config.example.toml` 作为标准结构。
 
-## Example Template
-See `config/config.example.toml` for a ready-to-copy template.
+## 示例模板
+请参考 `config/config.example.toml`，可直接复制修改。

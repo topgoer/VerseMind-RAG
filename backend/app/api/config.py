@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 def get_config_path() -> Path:
     config_path = PROJECT_ROOT / "config" / "config.toml"
     example_path = PROJECT_ROOT / "config" / "config.example.toml"
-    print(f"[DEBUG] PROJECT_ROOT={PROJECT_ROOT}")
+    # print(f"[DEBUG] PROJECT_ROOT={PROJECT_ROOT}")
     if config_path.exists():
         return config_path
     if example_path.exists():

@@ -44,7 +44,7 @@ function Sidebar({ activeModule, onModuleChange }) {
       </nav>
       
       <div className="mt-auto pt-6 border-t border-gray-700 text-xs text-gray-500">
-        <p className="mb-1">{t('appTitle')} {t('demoVersion')}</p>
+        <p className="mb-1">{t('appTitle')}</p>
         <p>{t('copyright')}</p>
       </div>
     </aside>

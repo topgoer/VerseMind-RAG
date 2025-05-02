@@ -85,26 +85,26 @@ VerseMind-RAG is a document intelligence and semantic generation system designed
 
 ### Running the Project
 
-1. **启动后端（推荐）**：
+1. **Start backend (recommended):**
    ```bash
    start-backend.bat
    ```
-   > 该脚本会自动激活 conda 环境并启动 FastAPI 后端服务。
+   > This script will automatically activate the conda environment and start the FastAPI backend service.
 
-   或手动启动：
+   Or start manually:
    ```bash
    cd backend
    conda activate versemind-rag
    uvicorn app.main:app --host 0.0.0.0 --port 8200 --reload
    ```
-   > API 地址: http://localhost:8200
-   > Swagger 文档: http://localhost:8200/docs
+   > API address: http://localhost:8200
+   > Swagger docs: http://localhost:8200/docs
 
-2. 启动前端：
+2. **Start frontend:**
    ```bash
-   # 开发模式（热更新）
+   # Development mode (hot reload)
    start-frontend.bat dev
-   # 生产模式
+   # Production mode
    start-frontend.bat
    ```
 

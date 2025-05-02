@@ -9,7 +9,6 @@ export const translations = {
     // 通用
     appTitle: 'VerseMind-RAG',
     appSlogan: 'Where Poetry Meets AI',
-    demoVersion: 'Demo Version',
     copyright: '© 2025 VerseMind',
     providerLabel: 'Provider',
     modelLabel: 'Model',
@@ -215,7 +214,6 @@ export const translations = {
     // 通用
     appTitle: 'VerseMind-RAG',
     appSlogan: '诗意与智慧的交融',
-    demoVersion: '演示版',
     copyright: '© 2025 VerseMind',
     providerLabel: '提供商',
     modelLabel: '模型',

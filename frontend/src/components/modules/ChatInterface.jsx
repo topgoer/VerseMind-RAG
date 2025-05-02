@@ -105,155 +105,95 @@ function ChatInterface({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      {/* Top config area */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('selectIndex')}
-            </label>
-            <select
-              value={selectedIndex}
-              onChange={(e) => setSelectedIndex(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm"
-              required
-              disabled={indices.length === 0}
-            >
-              <option value="">{indices.length === 0 ? t('noIndicesAvailable') : t('selectIndex')}</option>
-              {Array.isArray(indices) && indices.map((idx) => (
-                <option key={idx.index_id} value={idx.index_id}>
-                  {idx.index_name || idx.index_id} ({config?.vector_databases?.[idx.vector_db]?.name || idx.vector_db})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('providerLabel')}
-            </label>
-            <select
-              value={selectedProvider}
-              onChange={handleProviderChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm"
-              disabled={configLoading}
-            >
-              {configLoading ? (
-                <option>{t('loadingConfig')}...</option>
-              ) : config && config.model_groups ? (
-                Object.keys(config.model_groups).map((providerId) => (
-                  <option key={providerId} value={providerId}>
-                    {providerId}
+    <div className="flex flex-col h-full w-full bg-white">
+      {/* 选择区域 */}
+      <div className="w-full flex flex-wrap items-center gap-4 px-6 py-3 bg-white border-b border-gray-200" style={{zIndex:2}}>
+        {/* 索引选择 */}
+        <div className="flex flex-col">
+          <label className="text-xs text-gray-500 mb-1">{t('selectIndex')}</label>
+          <select
+            className="min-w-[180px] px-2 py-1 border border-gray-300 rounded-md"
+            value={selectedIndex}
+            onChange={e => setSelectedIndex(e.target.value)}
+            disabled={configLoading || loading}
+          >
+            <option value="">-- {t('selectIndex')} --</option>
+            {indices && indices.map(idx => {
+              if (typeof idx === 'object' && idx !== null) {
+                return (
+                  <option key={idx.id || idx.index_id || JSON.stringify(idx)} value={idx.id || idx.index_id || JSON.stringify(idx)}>
+                    {idx.name || idx.index_name || idx.id || idx.index_id || '[Unnamed Index]'}
                   </option>
-                ))
-              ) : (
-                <option value="">{t('noProvidersConfigured')}</option>
-              )}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('modelLabel')}
-            </label>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm"
-              disabled={configLoading || !selectedProvider}
-            >
-              {configLoading ? (
-                <option>{t('loadingConfig')}...</option>
-              ) : config && config.model_groups && config.model_groups[selectedProvider] && config.model_groups[selectedProvider].length > 0 ? (
-                config.model_groups[selectedProvider].map((modelInfo) => (
-                  <option key={modelInfo.id} value={modelInfo.id}>
-                    {modelInfo.name}
-                  </option>
-                ))
-              ) : (
-                <option value="">{selectedProvider ? t('noModelsForProvider') : t('selectProviderFirst')}</option>
-              )}
-            </select>
-          </div>
+                );
+              } else {
+                return (
+                  <option key={idx} value={idx}>{String(idx)}</option>
+                );
+              }
+            })}
+          </select>
+        </div>
+        {/* 供应商选择 */}
+        <div className="flex flex-col">
+          <label className="text-xs text-gray-500 mb-1">{t('provider')}</label>
+          <select
+            className="min-w-[120px] px-2 py-1 border border-gray-300 rounded-md"
+            value={selectedProvider}
+            onChange={handleProviderChange}
+            disabled={configLoading || loading}
+          >
+            {config && config.model_groups && Object.keys(config.model_groups).map(provider => (
+              <option key={provider} value={provider}>{provider}</option>
+            ))}
+          </select>
+        </div>
+        {/* 模型选择 */}
+        <div className="flex flex-col">
+          <label className="text-xs text-gray-500 mb-1">{t('model')}</label>
+          <select
+            className="min-w-[160px] px-2 py-1 border border-gray-300 rounded-md"
+            value={selectedModel}
+            onChange={e => setSelectedModel(e.target.value)}
+            disabled={configLoading || loading || !selectedProvider}
+          >
+            {config && config.model_groups && config.model_groups[selectedProvider] && config.model_groups[selectedProvider].map(model => (
+              <option key={model.id} value={model.id}>{model.name}</option>
+            ))}
+          </select>
         </div>
       </div>
-
-      {/* Chat area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* 聊天消息区 */}
+      <div className="flex-1 overflow-y-auto px-0 py-4 w-full" style={{background:'#f7f7fa'}}>
         {Array.isArray(chatHistory) && chatHistory.map((message, index) => (
-          <div key={message.id || index} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-lg lg:max-w-xl px-4 py-2 rounded-lg shadow-sm ${message.sender === 'user' ? 'bg-purple-100 text-purple-900' : 'bg-gray-100 text-gray-900'}`}>
-              {/* Display image if present and valid URL in user message */}
-              {message.sender === 'user' && message.imageUrl && typeof message.imageUrl === 'string' && (message.imageUrl.startsWith('blob:') || message.imageUrl.startsWith('data:')) && (
-                <img 
-                  src={message.imageUrl} 
-                  alt={t('userUploadAlt') || 'User upload'} // Add alt text translation
-                  className="max-w-xs max-h-48 rounded mb-2"
-                  onError={(e) => { 
-                    console.error('Error loading image URL:', message.imageUrl, e); 
-                    // Optionally hide the broken image element or show a placeholder
-                    e.target.style.display = 'none'; 
-                  }}
-                />
-              )}
-              {message.sender === 'system' && message.taskInfo && (
-                <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded">
-                  <p className="text-sm font-medium text-blue-700">{t('taskDetected')}: {t(message.taskInfo.type)}</p>
-                  <p className="text-xs text-blue-600">{t('taskParams')}: {JSON.stringify(message.taskInfo.params)}</p>
-                </div>
-              )}
-              {/* Only render text content */}
-              {message.text && (
-                message.isMarkdown ? (
-                  <ReactMarkdown className="markdown-content">
-                    {message.text}
-                  </ReactMarkdown>
-                ) : (
-                  <pre style={{whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, padding: 0, background: 'none', border: 0, fontFamily: 'inherit', fontSize: '1rem', color: 'inherit'}}>
-                    {message.text}
-                  </pre>
-                )
-              )}
-              {message.sender === 'system' && message.sources && Array.isArray(message.sources) && message.sources.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-200">
-                  <h4 className="text-xs font-semibold text-gray-600 mb-1">{t('sources')}:</h4>
-                  <ul className="space-y-1">
-                    {message.sources.map((source, i) => (
-                      <li key={i} className="text-xs text-gray-500 bg-gray-50 p-1 rounded">
-                        {t('page')} {source.metadata?.page || 'N/A'} ({t('similarity')}: {source.similarity?.toFixed(3) || 'N/A'})
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="text-xs text-gray-500 mt-1 text-right">
-                {message.timestamp} {message.sender === 'system' && `(${message.model})`}
-              </div>
+          <div key={message.id || index} className="w-full mb-2">
+            <div
+              className={`w-full max-w-full rounded-lg px-5 py-3 shadow-sm
+                ${message.sender === 'user' ? 'bg-blue-50' : 'bg-gray-100'}
+                text-gray-900 whitespace-pre-wrap break-words`}
+              style={{marginLeft:0, marginRight:0}}
+            >
+              {message.text}
             </div>
           </div>
         ))}
         {loading && (
-          <div className="flex justify-start">
-            <div className="max-w-lg lg:max-w-xl px-4 py-2 rounded-lg shadow-sm bg-gray-100 text-gray-900">
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
-                <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse delay-75"></div>
-                <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse delay-150"></div>
-                <span className="text-sm">{t('processing')}...</span>
-              </div>
+          <div className="w-full mb-2">
+            <div className="w-full max-w-full rounded-lg px-5 py-3 shadow-sm bg-gray-100 text-gray-900">
+              <span className="text-sm">{t('processing')}...</span>
             </div>
           </div>
         )}
         {currentTask && (
-          <div className="flex justify-start">
-            <div className="max-w-lg lg:max-w-xl px-4 py-2 rounded-lg shadow-sm bg-blue-100 text-blue-900">
+          <div className="w-full mb-2">
+            <div className="w-full max-w-full rounded-lg px-5 py-3 shadow-sm bg-blue-100 text-blue-900">
               <p className="text-sm font-medium">{t('executingTask')}: {t(currentTask.type)}</p>
               <p className="text-xs">{taskProgress}</p>
             </div>
           </div>
         )}
         {error && (
-          <div className="flex justify-start">
-            <div className="max-w-lg lg:max-w-xl px-4 py-2 rounded-lg shadow-sm bg-red-100 text-red-900">
+          <div className="w-full mb-2">
+            <div className="w-full max-w-full rounded-lg px-5 py-3 shadow-sm bg-red-100 text-red-900">
               <p className="text-sm font-medium">{t('error')}</p>
               <p className="text-xs">{error}</p>
             </div>
@@ -261,43 +201,23 @@ function ChatInterface({
         )}
         <div ref={chatEndRef} />
       </div>
-
-      {/* Input area */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50">
-        {/* Image preview */}
-        {selectedImage && (
-          <div className="mb-2 flex items-center space-x-2">
-            <img 
-              src={URL.createObjectURL(selectedImage)} 
-              alt="Selected preview" 
-              className="max-h-16 rounded border border-gray-300"
-            />
-            <span className="text-sm text-gray-600">{selectedImage.name}</span>
-            <button 
-              onClick={clearSelectedImage} 
-              className="text-gray-500 hover:text-red-600"
-              title={t('removeImage')}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        )}
+      {/* 输入栏固定在底部 */}
+      <div className="w-full bg-white border-t p-2 sticky bottom-0 left-0 z-10" style={{boxShadow:'0 -2px 8px rgba(0,0,0,0.03)'}}>
         <div className="flex items-end space-x-2">
-          {/* Image upload button */}
-          <input 
-            type="file" 
-            ref={imageInputRef} 
-            onChange={handleImageSelect} 
-            accept="image/png, image/jpeg, image/webp, image/gif" 
-            className="hidden" 
+          <input
+            type="file"
+            ref={imageInputRef}
+            onChange={handleImageSelect}
+            accept="image/png, image/jpeg, image/webp, image/gif"
+            className="hidden"
           />
           <button
-            onClick={() => imageInputRef.current?.click()} 
+            onClick={() => imageInputRef.current?.click()}
             className="p-2 text-gray-500 hover:text-purple-600 border border-gray-300 rounded-md bg-white"
             title={t('attachImage')}
             disabled={!selectedIndex || loading || configLoading}
           >
-            <Paperclip size={20} /> Img {/* Temporary text label */}
+            <span role="img" aria-label="attach">📎</span>
           </button>
           <textarea
             value={inputMessage}
@@ -305,7 +225,8 @@ function ChatInterface({
             onKeyPress={handleKeyPress}
             placeholder={selectedIndex ? t('chatPlaceholder') : t('selectIndexFirst')}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 resize-none"
-            rows={selectedImage ? 1 : 2} // Adjust rows based on image presence
+            rows={selectedImage ? 2 : 4}
+            style={{minHeight:'48px', maxHeight:'120px'}}
             disabled={!selectedIndex || loading || configLoading}
           />
           <button
