@@ -20,17 +20,17 @@ def test_embedding_models():
     """测试嵌入模型列表接口"""
     response = client.get("/api/embeddings/models")
     assert response.status_code == 200
-    assert "providers" in response.json()
-    assert "ollama" in response.json()["providers"]
-    assert "openai" in response.json()["providers"]
+    assert "model_groups" in response.json()
+    assert "ollama" in response.json()["model_groups"]
+    assert "openai" in response.json()["model_groups"]
 
 def test_generation_models():
     """测试生成模型列表接口"""
     response = client.get("/api/generate/models")
     assert response.status_code == 200
-    assert "providers" in response.json()
-    assert "ollama" in response.json()["providers"]
-    assert "openai" in response.json()["providers"]
+    assert "model_groups" in response.json()
+    assert "ollama" in response.json()["model_groups"]
+    assert "openai" in response.json()["model_groups"]
 
 def test_indices_list():
     """测试索引列表接口"""

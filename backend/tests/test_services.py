@@ -52,7 +52,7 @@ class TestEmbedService:
     def test_get_embedding_models(self, mock_makedirs):
         service = EmbedService()
         models = service.get_embedding_models()
-        assert "providers" in models
+        assert "model_groups" in models
         assert "ollama" in models["providers"]
 
 class TestIndexService:
