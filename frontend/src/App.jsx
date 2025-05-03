@@ -105,7 +105,7 @@ function App() {
           provider,
           model,
           temperature: parseFloat(temperature || 0.7),
-          max_tokens: parseInt(maxTokens || 1024),
+          ...(maxTokens ? { max_tokens: parseInt(maxTokens) } : {})
         };
         const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
         const res = await fetch(`${apiBase}/api/generate`, {
@@ -400,7 +400,7 @@ function App() {
             provider,
             model,
             temperature: parseFloat(temperature || 0.7),
-            max_tokens: parseInt(maxTokens || 1024),
+            ...(maxTokens ? { max_tokens: parseInt(maxTokens) } : {})
           };
           const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
           const res = await fetch(`${apiBase}/api/generate`, {

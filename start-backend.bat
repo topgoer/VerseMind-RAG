@@ -15,6 +15,6 @@ cd backend
 
 REM Start the FastAPI server
 echo Starting backend server...
-uvicorn app.main:app --host 0.0.0.0 --port 8200 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8200 --reload --no-access-log
 
 @echo on

@@ -3,7 +3,7 @@ api_type = "ollama"
 model = "gemma3:4b"
 base_url = "http://localhost:11434"
 api_key = "ollama"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 
 [llm.deepseek_ollama]
@@ -11,7 +11,7 @@ api_type = "ollama"
 model = "deepseek-r1:8b"
 base_url = "http://localhost:11434"
 api_key = "ollama"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 
 [llm.deepseek_v3]
@@ -19,7 +19,7 @@ api_type = "openai"
 model = "deepseek-chat"
 base_url = "https://api.deepseek.com/v1"
 api_key = "YOUR_API_KEY"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 
 [llm.deepseek_r1]
@@ -27,7 +27,7 @@ api_type = "openai"
 model = "deepseek-reasoner"
 base_url = "https://api.deepseek.com/v1"
 api_key = "YOUR_API_KEY"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 
 [llm.llama3_2-vision]
@@ -35,7 +35,7 @@ api_type = "ollama"
 model = "llama3.2-vision:latest"
 base_url = "http://localhost:11434"
 api_key = "ollama"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 api_version = ""
 
@@ -44,7 +44,7 @@ api_type = "ollama"
 model = "gemma3:4b"
 base_url = "http://localhost:11434"
 api_key = "ollama"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 
 [llm.phi4]
@@ -52,7 +52,7 @@ api_type = "ollama"
 model = "phi4:latest"
 base_url = "http://localhost:11434"
 api_key = "ollama"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 
 [llm.qwen3_8b]
@@ -60,7 +60,7 @@ api_type = "ollama"
 model = "qwen3:8b"
 base_url = "http://localhost:11434"
 api_key = "ollama"
-max_tokens = 4096
+max_tokens = 8192
 temperature = 0.7
 
 [llm.Qwen_siliconflow]

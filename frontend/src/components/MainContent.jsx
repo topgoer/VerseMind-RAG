@@ -133,7 +133,7 @@ function MainContent({
               // First search for relevant context
               onSearch(indexId, message, 3, 0.7).then(searchResult => {
                 // Then generate response based on search results
-                onGenerateText(searchResult.search_id, message, provider, model, 0.7, 1024);
+                onGenerateText(searchResult.search_id, message, provider, model);
               });
             }}
             chatHistory={chatHistory}

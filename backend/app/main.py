@@ -1,6 +1,9 @@
+import logging
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 import os
+
+logging.basicConfig(level=logging.INFO)
 
 # 导入API路由
 from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api

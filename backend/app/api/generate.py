@@ -15,13 +15,14 @@ async def generate_text(
     provider: str = Body(...),
     model: str = Body(...),
     temperature: float = Body(0.7),
-    max_tokens: int = Body(1024)
+    max_tokens: Optional[int] = Body(None)
 ):
     """
     基于检索结果生成文本
     """
+    # 只用 config，不传 max_tokens 给服务层
     try:
-        result = generate_service.generate_text(search_id, prompt, provider, model, temperature, max_tokens)
+        result = generate_service.generate_text(search_id, prompt, provider, model, temperature)
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

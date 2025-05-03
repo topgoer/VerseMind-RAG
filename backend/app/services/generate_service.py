@@ -8,6 +8,7 @@ import asyncio
 import toml
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from app.api.config import get_config_path
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,31 @@ class GenerateService:
         self.deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self.deepseek_api_base = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
         self.ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-    
+        # 只读取一次 config.toml，使用 config.py 的 get_config_path
+        config_path = get_config_path()
+        with open(config_path, "r", encoding="utf-8") as f:
+            self.config = toml.load(f)
+
+    def _get_max_tokens_from_config(self, model_name: str) -> int:
+        llm_config = self.config.get("llm", {})
+        # 优先查找所有 [llm.xxx] 区块
+        for section_key, section_cfg in llm_config.items():
+            if isinstance(section_cfg, dict):
+                if section_cfg.get("model", "").replace(" ", "").replace(":", "").lower() == model_name.replace(" ", "").replace(":", "").lower():
+                    if "max_tokens" in section_cfg:
+                        return int(section_cfg["max_tokens"])
+        # 查全局 [llm] 区块
+        if isinstance(llm_config, dict) and llm_config.get("model", "").replace(" ", "").replace(":", "").lower() == model_name.replace(" ", "").replace(":", "").lower():
+            if "max_tokens" in llm_config:
+                return int(llm_config["max_tokens"])
+        # fallback: 取全局 [llm] 的 max_tokens
+        if isinstance(llm_config, dict) and "max_tokens" in llm_config:
+            return int(llm_config["max_tokens"])
+        # 最后兜底 1024
+        return 1024
+
     def generate_text(self, search_id: Optional[str], prompt: str, provider: str, model: str, 
-                     temperature: float = 0.7, max_tokens: int = 1024) -> Dict[str, Any]:
+                     temperature: float = 0.7, max_tokens: int = None) -> Dict[str, Any]:
         """
         基于检索结果生成文本
         
@@ -62,7 +85,8 @@ class GenerateService:
         # 构建完整提示
         full_prompt = context + prompt if context else prompt
         
-        # 生成文本
+        # 强制只用 config 文件的 max_tokens
+        max_tokens = self._get_max_tokens_from_config(model)
         generated_text = self._generate_text_with_model(full_prompt, provider, model, temperature, max_tokens)
         
         # 生成唯一ID和时间戳
@@ -94,14 +118,8 @@ class GenerateService:
         return result
     
     def get_generation_models(self) -> Dict[str, Any]:
-        # 读取 config.toml
-        project_root = Path(__file__).resolve().parent.parent.parent
-        config_path = project_root / "config" / "config.toml"
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-        config = toml.load(config_path)
-        # 只返回 model_groups 部分
-        return {"model_groups": config.get("model_groups", {})}
+        # 直接使用 self.config
+        return {"model_groups": self.config.get("model_groups", {})}
     
     def _find_search_file(self, search_id: str) -> Optional[str]:
         """查找指定ID的搜索结果文件"""
@@ -221,7 +239,7 @@ class GenerateService:
             raise
     
     async def generate_text_stream(self, search_id: Optional[str], prompt: str, provider: str, model: str,
-                           temperature: float = 0.7, max_tokens: int = 1024):
+                           temperature: float = 0.7, max_tokens: int = None):
         """
         流式生成文本
         
@@ -260,6 +278,8 @@ class GenerateService:
         full_prompt = context + prompt if context else prompt
         
         # 根据提供商选择不同的流式生成方法
+        if max_tokens is None:
+            max_tokens = self._get_max_tokens_from_config(model)
         if provider == "deepseek":
             async for text_chunk in self._stream_with_deepseek(full_prompt, model, temperature, max_tokens):
                 yield text_chunk

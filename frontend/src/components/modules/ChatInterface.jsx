@@ -23,6 +23,7 @@ function ChatInterface({
   const [configLoading, setConfigLoading] = useState(true);
   const chatEndRef = useRef(null);
   const imageInputRef = useRef(null); // Ref for hidden file input
+  const textareaRef = useRef(null);
 
   // Load config and set defaults
   useEffect(() => {
@@ -52,6 +53,15 @@ function ChatInterface({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
+
+  // 自动调整输入框高度
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = textarea.scrollHeight + 'px';
+    }
+  }, [inputMessage]);
 
   // Handle provider change
   const handleProviderChange = (e) => {
@@ -94,6 +104,10 @@ function ChatInterface({
     onSendMessage(inputMessage, selectedIndex, selectedProvider, selectedModel, selectedImage);
     setInputMessage('');
     clearSelectedImage(); // Clear image after sending
+    // 重置高度
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
   };
 
   // Handle Enter key press
@@ -220,13 +234,18 @@ function ChatInterface({
             <span role="img" aria-label="attach">📎</span>
           </button>
           <textarea
+            ref={textareaRef}
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
+            onInput={e => {
+              e.target.style.height = 'auto';
+              e.target.style.height = e.target.scrollHeight + 'px';
+            }}
             onKeyPress={handleKeyPress}
             placeholder={selectedIndex ? t('chatPlaceholder') : t('selectIndexFirst')}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 resize-none"
-            rows={selectedImage ? 2 : 4}
-            style={{minHeight:'48px', maxHeight:'120px'}}
+            rows={2}
+            style={{minHeight:'32px', maxHeight:'216px', overflowY:'auto'}}
             disabled={!selectedIndex || loading || configLoading}
           />
           <button
