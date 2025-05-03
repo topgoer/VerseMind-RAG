@@ -30,7 +30,7 @@ jobs:
       - name: Run backend tests
         run: |
           pip install pytest
-          PYTHONPATH=./app pytest tests/
+          PYTHONPATH=. pytest tests/
 
   frontend-node:
     runs-on: ubuntu-latest
