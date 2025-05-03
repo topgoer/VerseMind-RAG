@@ -25,6 +25,33 @@ function ChatInterface({
   const imageInputRef = useRef(null); // Ref for hidden file input
   const textareaRef = useRef(null);
 
+  // 复制功能状态
+  const [copiedMsgId, setCopiedMsgId] = useState(null);
+  const [copiedType, setCopiedType] = useState(null); // 'text' or 'md'
+
+  // 复制内容到剪贴板
+  const handleCopy = async (msg, type) => {
+    let content = msg.text || '';
+    if (type === 'md') {
+      // 假设 message.text 已经是 markdown 格式，否则可自定义转换
+      content = msg.text || '';
+    } else {
+      // 纯文本，去除 markdown 语法
+      content = (msg.text || '').replace(/[`*_#>\-\[\]()>!]/g, '');
+    }
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMsgId(msg.id || msg.timestamp);
+      setCopiedType(type);
+      setTimeout(() => {
+        setCopiedMsgId(null);
+        setCopiedType(null);
+      }, 2000);
+    } catch (e) {
+      // 可选：提示失败
+    }
+  };
+
   // Load config and set defaults
   useEffect(() => {
     const fetchConfig = async () => {
@@ -180,6 +207,33 @@ function ChatInterface({
       <div className="flex-1 overflow-y-auto px-0 py-4 w-full" style={{background:'#f7f7fa'}}>
         {Array.isArray(chatHistory) && chatHistory.map((message, index) => (
           <div key={message.id || index} className="w-full mb-2">
+            {/* 新增：显示 sender 和时间戳 */}
+            <div className="flex items-center text-xs text-gray-500 mb-1 px-5">
+              <span className="font-semibold">
+                {message.sender === 'user' ? t('user') : (message.model || t('assistant'))}
+              </span>
+              <span className="mx-2">·</span>
+              <span>{message.timestamp ? new Date(message.timestamp).toLocaleString() : ''}</span>
+              {/* 复制按钮组 */}
+              <span className="ml-auto flex gap-1">
+                <button
+                  className="px-1 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-200 transition"
+                  title="Copy as text"
+                  onClick={() => handleCopy(message, 'text')}
+                  style={{minWidth:'28px'}}
+                >
+                  {copiedMsgId === (message.id || message.timestamp) && copiedType === 'text' ? '✔️' : 'TXT'}
+                </button>
+                <button
+                  className="px-1 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-200 transition"
+                  title="Copy as markdown"
+                  onClick={() => handleCopy(message, 'md')}
+                  style={{minWidth:'28px'}}
+                >
+                  {copiedMsgId === (message.id || message.timestamp) && copiedType === 'md' ? '✔️' : 'MD'}
+                </button>
+              </span>
+            </div>
             <div
               className={`w-full max-w-full rounded-lg px-5 py-3 shadow-sm
                 ${message.sender === 'user' ? 'bg-blue-50' : 'bg-gray-100'}
