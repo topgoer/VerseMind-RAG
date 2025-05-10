@@ -13,6 +13,8 @@ pandas==2.2.2
 toml==0.10.2
 pytest==8.3.5
 pytest-asyncio
+boto3>=1.34.40
+reportlab>=4.0.0
 pdfplumber>=0.9.0
 pillow_heif
 matplotlib

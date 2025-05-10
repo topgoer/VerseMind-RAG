@@ -1,3 +1,22 @@
+import pytest
+import os
+import tempfile
+import shutil
+import json
+import time
+from datetime import datetime
+from io import BytesIO
+from reportlab.pdfgen import canvas
+from app.services.load_service import LoadService
+from app.services.chunk_service import ChunkService
+
+def create_mock_upload_file(filename, content=b""):
+    """Create a mock upload file for testing"""
+    return {
+        "filename": filename,
+        "file": BytesIO(content)
+    }
+
 @pytest.mark.asyncio
 async def test_pdf_extraction_edge_cases_improved(document_cleanup):
     """Test PDF extraction handling of edge cases like empty or very small PDFs, with immediate cleanup"""
