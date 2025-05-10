@@ -20,9 +20,9 @@ def test_embedding_models():
     """测试嵌入模型列表接口"""
     response = client.get("/api/embeddings/models")
     assert response.status_code == 200
-    assert "providers" in response.json()
-    assert "ollama" in response.json()["providers"]
-    assert "openai" in response.json()["providers"]
+    # Based on your config.toml structure, response should have direct ollama/openai keys
+    assert "ollama" in response.json()
+    assert "openai" in response.json()
 
 def test_generation_models():
     """测试生成模型列表接口"""

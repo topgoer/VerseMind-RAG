@@ -4,10 +4,7 @@ python-multipart==0.0.20
 pydantic==2.11.3
 pymupdf==1.24.0
 python-docx==1.1.0
-# unstructured==0.14.10  # optional: remove to avoid pycrypto build issues
 langchain
-# faiss-cpu==1.7.4  # Install via conda: conda install -c pytorch faiss-cpu
-chromadb==0.4.22
 ollama==0.1.6
 openai==1.12.0
 requests==2.31.0
@@ -15,21 +12,20 @@ numpy==1.26.0
 pandas==2.2.2
 toml==0.10.2
 pytest==8.3.5
-pdfplumber>=0.9.0  # updated to avoid pycrypto dependency issues
-pillow_heif  # added to support unstructured.partition.pdf import
-matplotlib  # added to satisfy unstructured.partition.pdf dependency
-# unstructured-inference  # optional: remove to avoid dependencies requiring pycrypt crypto
-torchaudio  # added to satisfy dependencies requiring torchaudio
-pdf2image  # added to support unstructured-inference layout dependency
-pdfminer.six>=20201018  # allow newer versions of pdfminer.six
-pycryptodome  # add to replace pycrypto and avoid build error
-boto3  # added to support AWS Bedrock embeddings with EmbeddingService
+pytest-asyncio
+pdfplumber>=0.9.0
+pillow_heif
+matplotlib
+torchaudio
+pdf2image
+pdfminer.six>=20201018
+pycryptodome
+pypdf
 pymilvus>=2.3.0
 grpcio>=1.54.0
 protobuf
-pypdf  # added to support PDF reading and processing
-cloudpickle>=2.2.1  # Required by sagemaker
-docker  # Required by sagemaker
-jsonschema  # Required by sagemaker
-attrs<24,>=23.1.0  # Resolve version conflict for sagemaker
-importlib-metadata<7.0,>=1.4.0  # Resolve version conflict for sagemaker
+cloudpickle>=2.2.1
+docker
+jsonschema
+attrs<24,>=23.1.0
+importlib-metadata<7.0,>=1.4.0
