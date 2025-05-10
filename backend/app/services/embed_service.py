@@ -140,35 +140,50 @@ class EmbedService:
             self.logger.error(f"Error loading config: {e}")
             return {}
             
-    def get_embedding_models(self) -> Dict[str, List[Dict[str, Any]]]:
+    def get_embedding_models(self) -> Dict[str, Any]:
         """
         从配置文件获取所有可用的嵌入模型信息
         """
         try:
             config = self._load_config()
-            
+            self.logger.debug(f"Loaded config: {config}")
+
             # 从配置中获取嵌入模型
             if "embedding_models" in config:
                 self.logger.info("Loading embedding models from config file")
                 return config["embedding_models"]
-                
+
             # 如果配置中没有找到嵌入模型，返回默认值
             self.logger.warning("No embedding_models found in config. Using default values.")
-            return {
-                "ollama": [
-                    {"id": "bge-m3:latest", "name": "BGE-m3", "dimensions": 1024},
-                    {"id": "BGE-large:latest", "name": "BGE-Large", "dimensions": 1024}
-                ]
+            default_models = {
+                "providers": {
+                    "ollama": [
+                        {"id": "bge-m3:latest", "name": "BGE-m3", "dimensions": 1024},
+                        {"id": "BGE-large:latest", "name": "BGE-Large", "dimensions": 1024}
+                    ],
+                    "openai": [
+                        {"id": "text-embedding-ada-002", "name": "Ada", "dimensions": 1536}
+                    ]
+                }
             }
+            self.logger.debug(f"Returning default models: {default_models}")
+            return default_models
         except Exception as e:
             self.logger.error(f"Error getting embedding models: {str(e)}")
             # 返回默认值
-            return {
-                "ollama": [
-                    {"id": "bge-m3:latest", "name": "BGE-m3", "dimensions": 1024},
-                    {"id": "BGE-large:latest", "name": "BGE-Large", "dimensions": 1024}
-                ]
+            default_models = {
+                "providers": {
+                    "ollama": [
+                        {"id": "bge-m3:latest", "name": "BGE-m3", "dimensions": 1024},
+                        {"id": "BGE-large:latest", "name": "BGE-Large", "dimensions": 1024}
+                    ],
+                    "openai": [
+                        {"id": "text-embedding-ada-002", "name": "Ada", "dimensions": 1536}
+                    ]
+                }
             }
+            self.logger.debug(f"Returning default models due to error: {default_models}")
+            return default_models
 
     def create_embeddings(self, document_id: str, provider: str, model: str) -> Dict[str, Any]:
         """

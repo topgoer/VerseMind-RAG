@@ -18,14 +18,14 @@ class LoadService:
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         abs_storage = project_root / storage_dir
         self.storage_dir = str(abs_storage)
+        self.documents_dir = self.storage_dir  # Add documents_dir for compatibility with tests
         os.makedirs(self.storage_dir, exist_ok=True)
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(name)s: %(message)s'))
         if not self.logger.hasHandlers():
             self.logger.addHandler(handler)
-        self.logger.debug(f"[LoadService] storage_dir set to: {self.storage_dir}")
+        self.logger.info(f"[LoadService] storage_dir set to: {self.storage_dir}")
         self.total_pages = 0
         self.current_page_map = []
     
@@ -44,11 +44,12 @@ class LoadService:
         # 检查文件类型
         orig_filename = os.path.splitext(file.filename)[0]
         file_ext = os.path.splitext(file.filename)[1].lower()
-        self.logger.debug(f"[load_document] Received file: {file.filename}, ext: {file_ext}, size: {getattr(file, 'size', 'unknown')}")
+        self.logger.info(f"[load_document] Received file: {file.filename}, ext: {file_ext}")
         
         # 生成唯一文件名
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = str(uuid.uuid4())[:8]
+        self.logger.info(f"[load_document] Generated unique_id: {unique_id}")
         # 新文件名：原始文件名_时间戳_ID.后缀，保留原始名
         safe_filename = f"{orig_filename}_{timestamp}_{unique_id}{file_ext}"
         
@@ -58,7 +59,7 @@ class LoadService:
             content = await file.read()
             buffer.write(content)
             await file.seek(0)  # 重置文件指针以便后续处理
-        self.logger.debug(f"[load_document] Saved file to: {file_path}, size: {os.path.getsize(file_path)} bytes")
+        self.logger.info(f"[load_document] Saved file to: {file_path}, size: {os.path.getsize(file_path)} bytes")
         
         # 提取文档信息
         doc_info = {
@@ -109,7 +110,7 @@ class LoadService:
             text_info = self._extract_text_info(file_path)
             doc_info["preview"] = text_info["preview"]
         
-        self.logger.info(f"[load_document] Returning doc_info: {doc_info['filename']} (ID: {doc_info['id']})")  # Reduced verbosity
+        self.logger.info(f"[load_document] Returning doc_info: {doc_info['filename']} (ID: {doc_info['id']})")
         self.save_document_json(doc_info)  # 自动保存为JSON
         return doc_info
     

@@ -116,6 +116,9 @@ ollama = [
     { id = "bge-m3:latest", name = "BGE-m3", dimensions = 1024 },
     { id = "BGE-large:latest", name = "BGE-Large", dimensions = 1024 }
 ]
+openai = [
+    { id = "text-embedding-ada-002", name = "Ada", dimensions = 1536 }
+]
 
 [vector_databases]
 faiss = { name = "FAISS", description = "Facebook AI Similarity Search", local = true }

@@ -14,7 +14,7 @@ class ParseService:
         # Update directories according to the naming convention
         self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
         self.documents_dir = os.path.join(self.storage_dir, 'storage', 'documents')
-        # Fix paths to use backend directory structure
+        # Use paths that match the actual directory structure
         self.chunks_dir = os.path.join(self.storage_dir, 'backend', '02-chunked-docs')
         self.parsed_dir = os.path.join(self.storage_dir, 'backend', '03-parsed-docs')
         
@@ -252,18 +252,61 @@ class ParseService:
                 if document_id in filename:
                     self.logger.debug(f"Found document: {filename}") # Added log
                     return os.path.join(self.documents_dir, filename)
-        self.logger.warning(f"Document with ID: {document_id} not found in {self.documents_dir}") # Added log
+                    
+        # If not found in documents_dir, try the storage/documents directory
+        storage_dir = os.path.join(self.storage_dir, 'storage', 'documents')
+        if os.path.exists(storage_dir) and storage_dir != self.documents_dir:
+            self.logger.debug(f"Trying alternative directory: {storage_dir}")
+            for filename in os.listdir(storage_dir):
+                if document_id in filename:
+                    self.logger.debug(f"Found document in storage/documents: {filename}")
+                    return os.path.join(storage_dir, filename)
+                    
+        self.logger.warning(f"Document with ID: {document_id} not found in {self.documents_dir} or alternative locations") # Added log
         return None
     
     def _find_chunk_file(self, document_id: str) -> Optional[str]:
         """查找指定文档的分块文件"""
         self.logger.debug(f"Searching for chunk file for document ID: {document_id} in {self.chunks_dir}") # Added log
+        
+        # Try to find the newest chunk file for this document
+        newest_chunk_file = None
+        newest_time = 0
+        
         if os.path.exists(self.chunks_dir):
             for filename in os.listdir(self.chunks_dir):
                 if filename.startswith(document_id) and filename.endswith("_chunks.json"):
-                    self.logger.debug(f"Found chunk file: {filename}") # Added log
-                    return os.path.join(self.chunks_dir, filename)
-        self.logger.warning(f"Chunk file for document ID: {document_id} not found in {self.chunks_dir}") # Added log
+                    filepath = os.path.join(self.chunks_dir, filename)
+                    file_mtime = os.path.getmtime(filepath)
+                    
+                    # Track the newest file
+                    if file_mtime > newest_time:
+                        newest_time = file_mtime
+                        newest_chunk_file = filepath
+            
+            if newest_chunk_file:
+                self.logger.debug(f"Found chunk file: {os.path.basename(newest_chunk_file)}") # Added log
+                return newest_chunk_file
+                
+        # Check if there's a separate directory in 02-chunked-docs in the root
+        alt_chunks_dir = os.path.join(self.storage_dir, '02-chunked-docs')
+        if os.path.exists(alt_chunks_dir) and alt_chunks_dir != self.chunks_dir:
+            self.logger.debug(f"Checking alternative chunks directory: {alt_chunks_dir}")
+            for filename in os.listdir(alt_chunks_dir):
+                if filename.startswith(document_id) and filename.endswith("_chunks.json"):
+                    filepath = os.path.join(alt_chunks_dir, filename)
+                    file_mtime = os.path.getmtime(filepath)
+                    
+                    # If we didn't find any file before, or this is newer
+                    if file_mtime > newest_time:
+                        newest_time = file_mtime
+                        newest_chunk_file = filepath
+            
+            if newest_chunk_file:
+                self.logger.debug(f"Found chunk file in alternative location: {os.path.basename(newest_chunk_file)}")
+                return newest_chunk_file
+                
+        self.logger.warning(f"Chunk file for document ID: {document_id} not found in {self.chunks_dir} or alternative locations") # Added log
         return None
     
     def _parse_full_text(self, chunk_data: Dict[str, Any]) -> Dict[str, Any]:

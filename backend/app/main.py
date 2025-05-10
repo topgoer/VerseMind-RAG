@@ -5,6 +5,15 @@ import os
 
 logging.basicConfig(level=logging.INFO)
 
+# Set the global logging level to WARNING to suppress all INFO and DEBUG logs unless explicitly enabled
+logging.getLogger().setLevel(logging.WARNING)
+
+# Ensure all component-specific logging levels are set to WARNING
+logging.getLogger("app.services.load_service").setLevel(logging.WARNING)
+logging.getLogger("app.services.parse_service").setLevel(logging.WARNING)
+logging.getLogger("core.config").setLevel(logging.WARNING)
+logging.getLogger("SearchService").setLevel(logging.WARNING)
+
 # 导入API路由
 from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api, debug
 
@@ -14,6 +23,38 @@ app = FastAPI(
     description="Where Poetry Meets AI - 检索增强生成系统API",
     version="0.1.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    # 定义所有必要的目录路径 - 保持唯一性
+    required_dirs = [
+        # 原始文档
+        "storage/documents",
+        # 数据处理流程目录
+        "backend/01-loaded_docs",
+        "backend/02-chunked-docs", 
+        "backend/03-parsed-docs",
+        "backend/04-embedded-docs",
+        # 索引与结果存储
+        "backend/storage/indices",
+        "backend/storage/results"
+    ]
+    
+    # 创建所有必要的目录
+    for dir_path in required_dirs:
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+        except Exception as e:
+            logging.error(f"[startup] Failed to create directory: {dir_path}. Error: {e}")
+
+    # Suppress unnecessary logs unless there is an error
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        logging.debug("[core.config]: Initialized settings. Effective paths:")
+        logging.debug("  EMBEDDINGS_DIR='%s'", os.getenv('EMBEDDINGS_DIR', 'backend/04-embedded-docs'))
+        logging.debug("  INDICES_DIR='%s'", os.getenv('INDICES_DIR', 'backend/storage/indices'))
+        logging.debug("  DOCUMENTS_DIR='%s'", os.getenv('DOCUMENTS_DIR', 'backend/01-loaded_docs'))
+        logging.debug("  CHUNKS_DIR='%s'", os.getenv('CHUNKS_DIR', 'backend/02-chunked-docs'))
+        logging.debug("  PARSED_DIR='%s'", os.getenv('PARSED_DIR', 'backend/03-parsed-docs'))
 
 # 配置CORS
 app.add_middleware(
@@ -43,28 +84,6 @@ app.include_router(config_api.router, prefix="/api")
 app.include_router(index.router, prefix="/api/indices")
 app.include_router(embeddings.router, prefix="/api/embeddings")
 app.include_router(search.router, prefix="/api/search")
-
-# 创建必要的存储目录
-@app.on_event("startup")
-async def startup_event():
-    # 定义所有必要的目录路径 - 保持唯一性
-    required_dirs = [
-        # 原始文档
-        "storage/documents",
-        # 数据处理流程目录
-        "backend/01-loaded_docs",
-        "backend/02-chunked-docs", 
-        "backend/03-parsed-docs",
-        "backend/04-embedded-docs",
-        # 索引与结果存储
-        "backend/storage/indices",
-        "backend/storage/results"
-    ]
-    
-    # 创建所有必要的目录
-    for dir_path in required_dirs:
-        os.makedirs(dir_path, exist_ok=True)
-        print(f"[startup] Created directory: {dir_path}")
 
 # 根路由
 @app.get("/")
