@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
+import { fetchEmbeddingsDirectly, fetchIndicesDirectly } from '../../services/api';
 
 // Default vector databases if config fails to load
 const DEFAULT_VECTOR_DBS = {
@@ -16,7 +17,7 @@ const DEFAULT_VECTOR_DBS = {
   }
 };
 
-function IndexingModule({ embeddings = [], indices = [], documents = [], loading, error, onCreateIndex, onIndexDelete }) {
+function IndexingModule({ embeddings = [], indices = [], documents = [], loading, error, onCreateIndex, onIndexDelete, onRefresh, onLoadEmbeddings }) {
   const { t } = useLanguage();
   const [selectedEmbedding, setSelectedEmbedding] = useState('');
   const [indexType, setIndexType] = useState(''); // Initialize empty
@@ -24,6 +25,63 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
   const [configLoading, setConfigLoading] = useState(true);
   const [indexResult, setIndexResult] = useState(null);
   const [vectorDatabases, setVectorDatabases] = useState(DEFAULT_VECTOR_DBS); // Initialize with default
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+
+  // Load embeddings when component mounts or when embeddings array is empty
+  useEffect(() => {
+    const loadEmbeddingsData = async () => {
+      console.log('[IndexingModule] Loading embeddings data, current status:', { 
+        hasEmbeddings: Array.isArray(embeddings) && embeddings.length > 0,
+        initialLoadDone
+      });
+      
+      try {
+        // First try to use the provided onLoadEmbeddings function
+        if (onLoadEmbeddings && typeof onLoadEmbeddings === 'function') {
+          await onLoadEmbeddings();
+          setInitialLoadDone(true);
+        } 
+        // If we still don't have embeddings after calling onLoadEmbeddings, fetch directly from API
+        else if (!Array.isArray(embeddings) || embeddings.length === 0) {
+          console.log('[IndexingModule] Directly fetching embeddings from backend API');
+          await fetchEmbeddingsDirectlyFromAPI();
+          setInitialLoadDone(true);
+        }
+      } catch (error) {
+        console.error('[IndexingModule] Error loading embeddings:', error);
+      }
+    };
+
+    // Direct fetch function that doesn't rely on parent component state
+    const fetchEmbeddingsDirectlyFromAPI = async () => {
+      try {
+        const data = await fetchEmbeddingsDirectly();
+        
+        if (Array.isArray(data) && data.length > 0) {
+          console.log('[IndexingModule] Successfully fetched embeddings directly:', data.length);
+          // If we have a setEmbeddings function in the parent component, update it
+          if (typeof onLoadEmbeddings === 'function') {
+            await onLoadEmbeddings(); // This will update the parent's state
+          }
+          return data;
+        }
+      } catch (err) {
+        console.error('[IndexingModule] Error directly fetching embeddings:', err);
+        throw err;
+      }
+    };
+
+    // Always try to load embeddings on mount if we don't have any
+    if ((!Array.isArray(embeddings) || embeddings.length === 0) && !loading && !initialLoadDone) {
+      console.log('[IndexingModule] Loading embeddings on component mount or empty state');
+      loadEmbeddingsData();
+    }
+
+    // Reset initialLoadDone when component unmounts
+    return () => {
+      setInitialLoadDone(false);
+    };
+  }, [embeddings, onLoadEmbeddings, loading, initialLoadDone]);
 
   // 加载配置
   useEffect(() => {
@@ -80,22 +138,70 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
     fetchConfig();
   }, []);
 
+  // Automatically set the first embedding if available
+  useEffect(() => {
+    if (Array.isArray(embeddings) && embeddings.length > 0 && !selectedEmbedding) {
+      console.log('[IndexingModule] Embeddings loaded, setting first embedding as default');
+      setSelectedEmbedding(embeddings[0].embedding_id);
+    }
+  }, [embeddings, selectedEmbedding]);
+
   // 处理表单提交
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedEmbedding || !indexType) return;
     
     try {
-      // Find the document_id associated with the selected embedding_id
+      // Find the embedding info
       const embeddingInfo = embeddings.find(emb => emb.embedding_id === selectedEmbedding);
       if (!embeddingInfo) {
         throw new Error("Selected embedding not found");
       }
-      const result = await onCreateIndex(embeddingInfo.document_id, indexType, selectedEmbedding); // Pass embedding_id too
+
+      console.log('[IndexingModule] Type of onCreateIndex:', typeof onCreateIndex);
+      console.log('[IndexingModule] Creating index for document:', embeddingInfo.document_id);
+      console.log('[IndexingModule] Using vector DB:', indexType);
+      console.log('[IndexingModule] Using embedding ID:', selectedEmbedding);
+
+      if (typeof onCreateIndex !== 'function') {
+        console.error('[IndexingModule] onCreateIndex is not a function. Props received by IndexingModule:', { embeddings, indices, documents, loading, error, onCreateIndex, onIndexDelete, onRefresh });
+        throw new TypeError('onCreateIndex prop is not a function as expected in IndexingModule.');
+      }
+
+      // Call createIndex with the expected parameters: documentId, vectorDb, embeddingId
+      const result = await onCreateIndex(embeddingInfo.document_id, indexType, selectedEmbedding);
       setIndexResult(result);
     } catch (err) {
       // 错误已在 App.jsx 中处理
       console.error("Indexing failed in module:", err);
+    }
+  };
+
+  // Handle refresh request
+  const handleRefresh = async () => {
+    if (onRefresh && typeof onRefresh === 'function') {
+      await onRefresh();
+    }
+    
+    // Also refresh embeddings
+    if (onLoadEmbeddings && typeof onLoadEmbeddings === 'function') {
+      await onLoadEmbeddings();
+    }
+  };
+
+  // Support for manual reload of embeddings - tries both methods
+  const handleLoadEmbeddings = async () => {
+    try {
+      if (onLoadEmbeddings && typeof onLoadEmbeddings === 'function') {
+        console.log('[IndexingModule] Refreshing embeddings via parent component');
+        await onLoadEmbeddings();
+      } else {
+        console.log('[IndexingModule] Refreshing embeddings directly from API');
+        await fetchEmbeddingsDirectlyFromAPI();
+      }
+      console.log('[IndexingModule] Embeddings refresh completed');
+    } catch (error) {
+      console.error('[IndexingModule] Error refreshing embeddings:', error);
     }
   };
 
@@ -107,18 +213,78 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('selectEmbeddings')}
-            </label>
-            { !Array.isArray(embeddings) && <p className="text-red-500 text-sm mt-1">{t('embeddingsNotLoadedError', 'Embeddings data is not available or invalid.')}</p> }
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                {t('selectEmbeddings')}
+              </label>
+              {!loading && (
+                <button
+                  type="button"
+                  onClick={handleLoadEmbeddings}
+                  className="text-xs text-purple-600 hover:text-purple-800 flex items-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {t('refreshEmbeddings')}
+                </button>
+              )}
+            </div>
+            {!Array.isArray(embeddings) && <p className="text-red-500 text-sm mt-1">{t('embeddingsNotLoadedError', 'Embeddings data is not available or invalid.')}</p>}
+            {Array.isArray(embeddings) && embeddings.length === 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-amber-600 text-sm">{t('noEmbeddingsFound', 'No embeddings found. Try refreshing or go to the Vector Embedding page.')}</p>
+                  <button
+                    type="button"
+                    onClick={handleLoadEmbeddings}
+                    className="px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-xs flex items-center hover:bg-purple-200"
+                    disabled={loading}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-3.5 w-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {loading ? t('refreshing', 'Refreshing...') : t('forceRefresh', 'Force Refresh')}
+                  </button>
+                </div>
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center text-amber-800 mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="font-medium">{t('vectorEmbeddingsRequired', 'Vector Embeddings Required')}</span>
+                  </div>
+                  <p className="text-sm text-amber-700 mb-3">{t('beforeIndexingHelp', 'Before creating a vector index, you need to generate vector embeddings for your documents.')}</p>
+                  <a 
+                    href="#embedding"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (window.setActiveModule) {
+                        window.setActiveModule('embedding');
+                      } else {
+                        // Fallback: Try to find and click the embedding tab
+                        const embeddingTab = document.querySelector('[data-module="embedding"]');
+                        if (embeddingTab) embeddingTab.click();
+                      }
+                    }}
+                    className="inline-flex items-center px-3 py-2 border border-amber-300 text-sm font-medium rounded-md text-amber-700 bg-amber-100 hover:bg-amber-200"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {t('goToVectorEmbedding', 'Go to Vector Embedding')}
+                  </a>
+                </div>
+              </div>
+            )}
             <select
               value={selectedEmbedding}
               onChange={(e) => setSelectedEmbedding(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
               required
-              disabled={!Array.isArray(embeddings) || embeddings.length === 0}
+              disabled={!Array.isArray(embeddings) || embeddings.length === 0 || loading}
             >
-              <option value="">{!Array.isArray(embeddings) || embeddings.length === 0 ? t('noEmbeddingsAvailable') : t('selectEmbeddings')}</option>
+              <option value="">{loading ? t('loading') : (!Array.isArray(embeddings) || embeddings.length === 0) ? t('noEmbeddingsAvailable') : t('selectEmbeddings')}</option>
               {/* Ensure embeddings and documents are arrays before mapping */}
               {Array.isArray(embeddings) && Array.isArray(documents) && embeddings.map((emb) => {
                 const doc = documents.find(d => d.id === emb.document_id);
@@ -185,7 +351,21 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
       
       {/* Display existing indices table */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h2 className="text-xl font-semibold mb-4">{t('existingIndices')}</h2> {/* Add translation key */}
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">{t('existingIndices')}</h2>
+          <button 
+            onClick={handleRefresh}
+            disabled={loading}
+            className={`px-3 py-1 rounded-md text-sm ${loading ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
+          >
+            <span className="flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {loading ? t('refreshing') : t('refresh')}
+            </span>
+          </button>
+        </div>
         
         {loading ? (
           <div className="text-center py-8">
@@ -238,6 +418,21 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
                 <p>{t('noIndices')}</p> {/* Add translation key */}
               </div>
             )}
+            
+            {error && (
+              <div className="mt-4 bg-red-50 p-4 rounded-md">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293-1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-red-700">{error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -256,7 +451,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
                 <span className="font-medium">{t('indexId')}:</span> {indexResult.index_id}
               </p>
               <p className="mb-1">
-                <span className="font-medium">{t('indexType')}:</span> {vectorDatabases?.[indexResult.index_type]?.name || indexResult.index_type}
+                <span className="font-medium">{t('indexType')}:</span> {vectorDatabases?.[indexResult.vector_db]?.name || indexResult.vector_db || "unknown"}
               </p>
               <p className="mb-1">
                 <span className="font-medium">{t('timestamp')}:</span> {new Date().toLocaleString()}
@@ -278,7 +473,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         </div>
       )}
       
-      {!indexResult && !loading && (
+      {!indexResult && !loading && indices.length === 0 && (
         <div className="bg-gray-50 p-6 rounded-lg text-center text-gray-500">
           {t('noIndexCreated')}
         </div>

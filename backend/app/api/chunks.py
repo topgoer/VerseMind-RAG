@@ -33,6 +33,20 @@ async def get_document_chunks(document_id: str):
     获取指定文档的分块结果
     """
     chunks = chunk_service.get_document_chunks(document_id)
+    # 修改：找不到分块时返回空列表而不是报404
     if not chunks:
-        raise HTTPException(status_code=404, detail=f"找不到ID为{document_id}的文档分块")
+        return []
     return chunks
+
+@router.delete("/{chunk_id}")
+async def delete_chunk_result(chunk_id: str):
+    """
+    删除指定的分块结果文件
+    """
+    try:
+        result_message = chunk_service.delete_chunk_result(chunk_id)
+        return {"message": result_message}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Chunk result file not found for id: {chunk_id}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete chunk result: {str(e)}")

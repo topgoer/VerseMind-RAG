@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { useLanguage } from '../contexts/LanguageContext';
 import LoadFileModule from './modules/LoadFileModule';
 import ChunkFileModule from './modules/ChunkFileModule';
@@ -20,21 +21,27 @@ function MainContent({
   loading,
   error,
   onDocumentUpload,
+  onDocumentDelete, // Add this prop
   onChunkDocument,
   onParseDocument,
   onCreateEmbeddings,
+  onLoadEmbeddings,    // Add this to receive the prop from App.jsx
   onCreateIndex,
   onSearch,
   onGenerateText,
+  onSendMessage, // Added from App.jsx
   onRefreshDocuments,
   onRefreshIndices,
-  onDocumentDelete, // Add document delete handler
-  onChunkDelete,    // Add chunk delete handler
-  onEmbeddingDelete,// Add embedding delete handler
-  onIndexDelete,    // Add index delete handler
+  onChunkDelete,
+  onEmbeddingDelete,
+  onIndexDelete,
   chatHistory, 
+  currentTask, // Added from App.jsx
+  taskProgress, // Added from App.jsx
   config, 
-  configLoading 
+  configLoading,
+  selectedDocumentObject,
+  onDocumentSelect
 }) {
   const { t } = useLanguage();
   
@@ -48,19 +55,8 @@ function MainContent({
             loading={loading} 
             error={error} 
             onDocumentUpload={onDocumentUpload}
+            onDocumentDelete={onDocumentDelete} // Pass it down
             onRefresh={onRefreshDocuments}
-            onDocumentDelete={onDocumentDelete} // Pass delete handler
-          />
-        );
-      case 'chunk':
-        return (
-          <ChunkFileModule 
-            documents={documents} 
-            chunks={chunks} 
-            loading={loading} 
-            error={error} 
-            onChunkDocument={onChunkDocument}
-            onChunkDelete={onChunkDelete} // Pass delete handler
           />
         );
       case 'parse':
@@ -72,6 +68,19 @@ function MainContent({
             onParseDocument={onParseDocument}
           />
         );
+      case 'chunk':
+        return (
+          <ChunkFileModule 
+            documents={documents}
+            chunks={chunks}
+            loading={loading}
+            error={error}
+            onChunkDocument={onChunkDocument}
+            onChunkDelete={onChunkDelete}
+            selectedDocumentObject={selectedDocumentObject}
+            onDocumentSelect={onDocumentSelect}
+          />
+        );
       case 'embedding':
         return (
           <EmbeddingFileModule 
@@ -80,6 +89,7 @@ function MainContent({
             loading={loading} 
             error={error} 
             onCreateEmbeddings={onCreateEmbeddings}
+            onLoadEmbeddings={onLoadEmbeddings} // Pass onLoadEmbeddings
             onEmbeddingDelete={onEmbeddingDelete} // Pass delete handler
           />
         );
@@ -94,6 +104,7 @@ function MainContent({
             onCreateIndex={onCreateIndex}
             onRefresh={onRefreshIndices}
             onIndexDelete={onIndexDelete} // Pass delete handler
+            onLoadEmbeddings={onLoadEmbeddings} // Add missing property to load embeddings
           />
         );
       case 'search':
@@ -124,19 +135,13 @@ function MainContent({
         return (
           <ChatInterface 
             indices={indices}
-            documents={documents} // Pass documents for display name
-            searchResults={searchResults}
-            generatedText={generatedText}
+            documents={documents} // Add documents prop to match GenerationModule
             loading={loading}
             error={error}
-            onSendMessage={(message, indexId, provider, model) => {
-              // First search for relevant context
-              onSearch(indexId, message, 3, 0.7).then(searchResult => {
-                // Then generate response based on search results
-                onGenerateText(searchResult.search_id, message, provider, model);
-              });
-            }}
+            onSendMessage={onSendMessage}
             chatHistory={chatHistory}
+            currentTask={currentTask}
+            taskProgress={taskProgress}
           />
         );
       default:
@@ -155,6 +160,40 @@ function MainContent({
     </main>
   );
 }
+
+MainContent.propTypes = {
+  activeModule: PropTypes.string.isRequired,
+  documents: PropTypes.array.isRequired,
+  embeddings: PropTypes.array.isRequired,
+  chunks: PropTypes.array.isRequired,
+  indices: PropTypes.array.isRequired,
+  searchResults: PropTypes.object,
+  generatedText: PropTypes.string,
+  loading: PropTypes.bool.isRequired,
+  error: PropTypes.string,
+  onDocumentUpload: PropTypes.func.isRequired,
+  onDocumentDelete: PropTypes.func.isRequired,
+  onChunkDocument: PropTypes.func.isRequired,
+  onParseDocument: PropTypes.func.isRequired,
+  onCreateEmbeddings: PropTypes.func.isRequired,
+  onLoadEmbeddings: PropTypes.func.isRequired,
+  onCreateIndex: PropTypes.func.isRequired,
+  onSearch: PropTypes.func.isRequired,
+  onGenerateText: PropTypes.func.isRequired,
+  onSendMessage: PropTypes.func.isRequired,
+  onRefreshDocuments: PropTypes.func.isRequired,
+  onRefreshIndices: PropTypes.func.isRequired,
+  onChunkDelete: PropTypes.func.isRequired,
+  onEmbeddingDelete: PropTypes.func.isRequired,
+  onIndexDelete: PropTypes.func.isRequired,
+  chatHistory: PropTypes.array.isRequired,
+  currentTask: PropTypes.string,
+  taskProgress: PropTypes.number,
+  config: PropTypes.object,
+  configLoading: PropTypes.bool,
+  selectedDocumentObject: PropTypes.object,
+  onDocumentSelect: PropTypes.func
+};
 
 export default MainContent;
 

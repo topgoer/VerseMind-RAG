@@ -7,7 +7,8 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
   const [selectedIndex, setSelectedIndex] = useState('');
   const [query, setQuery] = useState('');
   const [topK, setTopK] = useState(5);
-  const [threshold, setThreshold] = useState(0.7);
+  const [threshold, setThreshold] = useState(0.5);
+  const [minChars, setMinChars] = useState(100); // Add minChars state
   const [searchResults, setSearchResults] = useState(null);
   const [config, setConfig] = useState(null);
 
@@ -27,7 +28,8 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
     if (!selectedIndex || !query.trim()) return;
     
     try {
-      const results = await onSearch(selectedIndex, query, topK, threshold);
+      // Pass similarity_threshold parameter (not threshold) and min_chars parameter to match the backend API
+      const results = await onSearch(selectedIndex, query, topK, threshold, minChars);
       setSearchResults(results);
     } catch (err) {
       // 错误已在 App.jsx 中处理
@@ -82,7 +84,7 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
             />
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('topK')}
@@ -113,6 +115,20 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
                 />
                 <span className="text-sm font-medium">{threshold.toFixed(2)}</span>
               </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('minChars') || 'Min Chars'}
+              </label>
+              <input
+                type="number"
+                min="10"
+                max="1000"
+                value={minChars}
+                onChange={(e) => setMinChars(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+              />
             </div>
           </div>
           
@@ -171,7 +187,7 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
                   
                   <div className="mb-2">
                     <span className="text-xs text-gray-500">
-                      {t('chunkId')}: {result.chunk_id || 'N/A'} | {t('page')}: {result.metadata?.page || 'N/A'}
+                      {t('chunkId')}: {result.chunk_id || result.id || 'N/A'} | {t('page')}: {result.metadata?.page || 'N/A'}
                     </span>
                   </div>
                   

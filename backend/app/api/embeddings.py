@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Body, Depends
-from typing import Dict, List, Optional
+from fastapi import APIRouter, HTTPException, Body, Depends, Query
+from typing import Dict, List, Any, Optional
 import os
 
 from app.services.embed_service import EmbedService
@@ -32,3 +32,27 @@ async def get_embedding_models():
     获取可用的嵌入模型列表
     """
     return embed_service.get_embedding_models()
+
+@router.get("/list")
+async def list_embeddings(document_id: Optional[str] = Query(None, description="Optional document ID to filter embeddings")):
+    """
+    获取所有嵌入向量的列表，可选择按文档ID过滤
+    """
+    try:
+        result = embed_service.list_embeddings(document_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取嵌入列表失败: {str(e)}")
+
+@router.delete("/{embedding_id}")
+async def delete_embedding(embedding_id: str):
+    """
+    删除指定ID的嵌入向量
+    """
+    try:
+        result = embed_service.delete_embedding(embedding_id)
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除嵌入失败: {str(e)}")

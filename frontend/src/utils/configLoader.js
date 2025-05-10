@@ -1,4 +1,6 @@
 let configCache = null;
+let loadingPromise = null; // Track ongoing requests
+
 let defaultConfig = {
   model_groups: {
     ollama: [
@@ -45,27 +47,42 @@ let defaultConfig = {
 };
 
 export const loadConfig = async () => {
+  // Return cached config if available
   if (configCache) {
     return configCache;
   }
 
+  // If there's already a request in progress, return that promise
+  // This prevents multiple simultaneous API calls
+  if (loadingPromise) {
+    return loadingPromise;
+  }
+
   try {
-    // 直接请求后端 API 获取配置
-    console.log('[ConfigLoader] Requesting backend /api/config ...');
-    const apiBase = import.meta.env.VITE_API_BASE_URL || '';
-    const response = await fetch(`${apiBase}/api/config`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch backend config: ' + response.statusText);
-    }
-    const configData = await response.json();
-    console.log('[ConfigLoader] Backend config loaded:', configData);
-    configCache = configData;
-    return configData;
+    // Create and store the loading promise
+    loadingPromise = (async () => {
+      console.log('[ConfigLoader] Requesting backend /api/config ...');
+      const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+      const response = await fetch(`${apiBase}/api/config`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch backend config: ' + response.statusText);
+      }
+      const configData = await response.json();
+      console.log('[ConfigLoader] Backend config loaded:', configData);
+      configCache = configData;
+      return configData;
+    })();
+
+    // Return the result of the loading promise
+    return await loadingPromise;
   } catch (error) {
     console.error('[ConfigLoader] Error loading backend config:', error);
     console.warn('[ConfigLoader] Using default config due to loading error.');
     configCache = defaultConfig;
     return defaultConfig;
+  } finally {
+    // Clear the loading promise when done (success or failure)
+    loadingPromise = null;
   }
 };
 

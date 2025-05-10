@@ -1,29 +1,44 @@
-import React, { useState } from 'react';
-import { useLanguage } from '../../contexts/LanguageContext'; // Import useLanguage
+import React, { useState, useEffect } from 'react';
+import { useLanguage } from '../../contexts/LanguageContext';
 
-function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocument, onChunkDelete }) { // Add onChunkDelete prop
-  const { t } = useLanguage(); // Use translation hook
-  const [selectedDocument, setSelectedDocument] = useState('');
-  const [strategy, setStrategy] = useState('character');
+function ChunkFileModule({ 
+  documents, 
+  chunks = [], 
+  loading, 
+  error, 
+  onChunkDocument, 
+  onChunkDelete, 
+  selectedDocumentObject, 
+  onDocumentSelect 
+}) {
+  const { t } = useLanguage();
+  const [strategy, setStrategy] = useState('char_count');
   const [chunkSize, setChunkSize] = useState(1000);
   const [overlap, setOverlap] = useState(200);
-  
-  // 处理表单提交
+
+  useEffect(() => {
+    if (!selectedDocumentObject && documents && documents.length > 0 && onDocumentSelect) {
+      // Optionally auto-select the first document
+    }
+  }, [selectedDocumentObject, documents, onDocumentSelect]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    
-    if (!selectedDocument) {
+    if (!selectedDocumentObject || !selectedDocumentObject.id) {
+      console.warn("Submit prevented: No document selected via props.");
       return;
     }
-    
-    onChunkDocument(selectedDocument, strategy, chunkSize, overlap)
-      .then((result) => {
-        // 分块成功后的处理
-        console.log('分块成功:', result);
-      })
-      .catch((error) => {
-        console.error('分块失败:', error);
-      });
+    if (typeof onChunkDocument === 'function') {
+      onChunkDocument(selectedDocumentObject.id, strategy, chunkSize, overlap)
+        .then((result) => {
+          console.log('分块成功:', result);
+        })
+        .catch((err) => {
+          console.error('分块失败:', err);
+        });
+    } else {
+      console.error("onChunkDocument prop is not a function. Received:", onChunkDocument);
+    }
   };
 
   return (
@@ -40,12 +55,18 @@ function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocume
               {t('selectDocument')}
             </label>
             <select
-              value={selectedDocument}
-              onChange={(e) => setSelectedDocument(e.target.value)}
+              value={selectedDocumentObject?.id || ''}
+              onChange={(e) => {
+                if (typeof onDocumentSelect === 'function') {
+                  onDocumentSelect(e.target.value);
+                } else {
+                  console.error("onDocumentSelect prop is not a function. Received:", onDocumentSelect);
+                }
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
               required
             >
-              <option value="">{t('selectDocument')}</option>
+              <option value="">{t('selectDocumentPrompt')}</option>
               {documents.map((doc) => (
                 <option key={doc.id} value={doc.id}>
                   {doc.filename}
@@ -60,10 +81,13 @@ function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocume
             </label>
             <select
               value={strategy}
-              onChange={(e) => setStrategy(e.target.value)}
+              onChange={(e) => {
+                const newStrategy = e.target.value;
+                setStrategy(newStrategy);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
             >
-              <option value="character">{t('byCharacter')}</option>
+              <option value="char_count">{t('byCharacter')}</option>
               <option value="paragraph">{t('byParagraph')}</option>
               <option value="heading">{t('byHeading')}</option>
             </select>
@@ -106,9 +130,9 @@ function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocume
           <div className="pt-2">
             <button
               type="submit"
-              disabled={loading || !selectedDocument}
+              disabled={loading || !selectedDocumentObject}
               className={`w-full px-4 py-2 text-white rounded-md ${
-                loading || !selectedDocument
+                loading || !selectedDocumentObject
                   ? 'bg-purple-400 cursor-not-allowed'
                   : 'bg-purple-600 hover:bg-purple-700'
               }`}
@@ -122,10 +146,10 @@ function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocume
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">{t('chunkingResults')}</h2>
         
-        {loading ? (
+        {loading && chunks.length === 0 ? (
           <div className="text-center py-8">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-purple-600"></div>
-            <p className="mt-2 text-gray-600">{t('processing')}</p>
+            <p className="mt-2 text-gray-600">{t('loadingChunks')}</p>
           </div>
         ) : (
           <div>
@@ -138,7 +162,7 @@ function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocume
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('chunkSize')}</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('overlapSize')}</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('chunks')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th> {/* Add Actions column */} 
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('actions')}</th> 
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -150,22 +174,30 @@ function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocume
                           <span className="font-medium text-gray-900">{doc ? doc.filename : chunk.document_id}</span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                          {chunk.strategy === 'character' ? t('byCharacter') : 
-                           chunk.strategy === 'paragraph' ? t('byParagraph') : t('byHeading')}
+                          {chunk.strategy === 'char_count' ? t('byCharacter') : 
+                           chunk.strategy === 'paragraph' ? t('byParagraph') : 
+                           chunk.strategy === 'heading' ? t('byHeading') : chunk.strategy}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                          {chunk.chunk_size}
+                          {chunk.chunk_size || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                          {chunk.overlap}
+                          {chunk.overlap !== undefined ? chunk.overlap : 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">
                           {chunk.total_chunks}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium"> {/* Add Delete button cell */} 
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <button 
-                            onClick={() => onChunkDelete(chunk.id)} 
+                            onClick={() => {
+                              if (typeof onChunkDelete === 'function') {
+                                onChunkDelete(chunk.id);
+                              } else {
+                                console.error("onChunkDelete prop is not a function. Received:", onChunkDelete);
+                              }
+                            }} 
                             className="text-red-600 hover:text-red-900"
+                            disabled={loading}
                           >
                             {t('delete')}
                           </button>
@@ -177,11 +209,12 @@ function ChunkFileModule({ documents, chunks = [], loading, error, onChunkDocume
               </table>
             </div>
             
-            {Array.isArray(chunks) && chunks.length === 0 && (
+            {Array.isArray(chunks) && chunks.length === 0 && !loading && (
               <div className="text-center py-8 text-gray-500">
-                <p>{t('noChunks')}</p>
+                <p>{t('noChunksForDocument')}</p>
               </div>
             )}
+            {error && <p className="text-red-500 text-center py-4">{t('errorLoadingChunks')}: {error}</p>}
           </div>
         )}
       </div>

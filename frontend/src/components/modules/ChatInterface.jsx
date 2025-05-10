@@ -6,6 +6,7 @@ import { Paperclip, X } from 'lucide-react'; // Import icons
 
 function ChatInterface({ 
   indices, 
+  documents,  // Add documents prop
   loading, 
   error, 
   onSendMessage, 
@@ -125,10 +126,23 @@ function ChatInterface({
   // Handle send message
   const handleSendMessage = () => {
     // Allow sending only image, only text, or both
-    if ((!inputMessage.trim() && !selectedImage) || !selectedIndex || !selectedModel) return;
+    if ((!inputMessage.trim() && !selectedImage) || !selectedModel) return;
     
-    // Pass image file along with other data
-    onSendMessage(inputMessage, selectedIndex, selectedProvider, selectedModel, selectedImage);
+    console.log('[ChatInterface][handleSendMessage] selectedIndex:', selectedIndex);
+    
+    if (typeof onSendMessage === 'function') {
+      // Pass the necessary parameters to onSendMessage (which is handleSearchAndGenerate)
+      // This will first search the index and then generate text based on the search results
+      // If no index is selected, it will generate text without search context
+      onSendMessage(selectedIndex || null, inputMessage, selectedModel, selectedProvider, selectedImage);
+    } else {
+      console.error("CRITICAL ERROR: onSendMessage prop in ChatInterface is not a function!", {
+        propType: typeof onSendMessage,
+        propValue: onSendMessage
+      });
+      // Optionally, display an error to the user here
+    }
+    
     setInputMessage('');
     clearSelectedImage(); // Clear image after sending
     // 重置高度
@@ -159,16 +173,25 @@ function ChatInterface({
             disabled={configLoading || loading}
           >
             <option value="">-- {t('selectIndex')} --</option>
-            {indices && indices.map(idx => {
+            {Array.isArray(indices) && Array.isArray(documents) && indices.map((idx) => {
               if (typeof idx === 'object' && idx !== null) {
+                // Find the associated document to get the filename
+                const doc = documents.find(d => d.id === idx.document_id);
+                const displayName = doc ? doc.filename : idx.document_id;
+                // Get the index type name from config (like "FAISS" instead of "faiss")
+                const indexTypeName = config?.vector_databases?.[idx.vector_db]?.name || idx.vector_db;
+                
                 return (
-                  <option key={idx.id || idx.index_id || JSON.stringify(idx)} value={idx.id || idx.index_id || JSON.stringify(idx)}>
-                    {idx.name || idx.index_name || idx.id || idx.index_id || '[Unnamed Index]'}
+                  <option key={idx.index_id} value={idx.index_id}>
+                    {displayName} ({t('indexType')}: {indexTypeName}, ID: {idx.index_id})
                   </option>
                 );
               } else {
+                const idValue = String(idx);
                 return (
-                  <option key={idx} value={idx}>{String(idx)}</option>
+                  <option key={idValue} value={idValue}>
+                    {idValue}
+                  </option>
                 );
               }
             })}
@@ -283,7 +306,7 @@ function ChatInterface({
             onClick={() => imageInputRef.current?.click()}
             className="p-2 text-gray-500 hover:text-purple-600 border border-gray-300 rounded-md bg-white"
             title={t('attachImage')}
-            disabled={!selectedIndex || loading || configLoading}
+            disabled={loading || configLoading}
           >
             <span role="img" aria-label="attach">📎</span>
           </button>
@@ -296,17 +319,17 @@ function ChatInterface({
               e.target.style.height = e.target.scrollHeight + 'px';
             }}
             onKeyPress={handleKeyPress}
-            placeholder={selectedIndex ? t('chatPlaceholder') : t('selectIndexFirst')}
+            placeholder={t('chatPlaceholder')}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 resize-none"
             rows={2}
             style={{minHeight:'32px', maxHeight:'216px', overflowY:'auto'}}
-            disabled={!selectedIndex || loading || configLoading}
+            disabled={loading || configLoading}
           />
           <button
             onClick={handleSendMessage}
-            disabled={(!inputMessage.trim() && !selectedImage) || !selectedIndex || !selectedModel || loading || configLoading}
+            disabled={(!inputMessage.trim() && !selectedImage) || loading || configLoading}
             className={`px-4 py-2 rounded-md text-white self-stretch flex items-center justify-center ${
-              (!inputMessage.trim() && !selectedImage) || !selectedIndex || !selectedModel || loading || configLoading
+              (!inputMessage.trim() && !selectedImage) || loading || configLoading
                 ? 'bg-purple-400 cursor-not-allowed'
                 : 'bg-purple-600 hover:bg-purple-700'
             }`}

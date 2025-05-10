@@ -1,206 +1,148 @@
-import React, { useState } from 'react';
+import React from 'react';
+import PropTypes from 'prop-types';
+import { Trash2 } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 
-function LoadFileModule({ documents, loading, error, onDocumentUpload, onRefresh, onDocumentDelete }) { // Add onDocumentDelete prop
+function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumentDelete, onRefresh }) {
   const { t } = useLanguage();
-  const [dragActive, setDragActive] = useState(false);
-  
-  // 处理文件拖放
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
+
+  const handleFileChange = (event) => {
+    const files = Array.from(event.target.files);
+    if (files.length > 0) {
+      // Create FormData object and add the file with field name 'file'
+      const formData = new FormData();
+      formData.append('file', files[0]); // Only upload one file at a time for now
+      onDocumentUpload(formData);
     }
-  };
-  
-  // 处理文件放置
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFiles(e.dataTransfer.files);
-      // Reset input value if possible (might need ref, simpler to handle in handleChange)
-    }
-  };
-  
-  // 处理文件选择
-  const handleChange = (e) => {
-    e.preventDefault();
-    
-    if (e.target.files && e.target.files[0]) {
-      handleFiles(e.target.files);
-      // Reset the input value to allow re-selecting the same file
-      e.target.value = null; 
-    }
-  };
-  
-  // 处理文件上传
-  const handleFiles = (files) => {
-    const formData = new FormData();
-    formData.append('file', files[0]);
-    
-    onDocumentUpload(formData)
-      .then(() => {
-        // 上传成功后的处理
-      })
-      .catch((error) => {
-        console.error('上传失败:', error);
-      });
-  };
-  
-  // 格式化文件大小
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-  
-  // 格式化日期
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    
-    // 假设格式为 "20250412_090000"
-    const year = dateString.substring(0, 4);
-    const month = dateString.substring(4, 6);
-    const day = dateString.substring(6, 8);
-    const hour = dateString.substring(9, 11);
-    const minute = dateString.substring(11, 13);
-    
-    return `${year}-${month}-${day} ${hour}:${minute}`;
   };
 
-  // 处理删除确认
-  const handleDeleteClick = (docId, docFilename) => {
-    if (window.confirm(t('confirmDeleteMessage', { item: docFilename }))) {
-      onDocumentDelete(docId);
+  const handleDelete = async (documentId) => {
+    try {
+      await onDocumentDelete(documentId);
+      // Optionally, trigger a refresh or handle UI update here if not handled by parent
+    } catch (err) {
+      // Error is likely already handled and displayed by App.jsx
+      // console.error('Deletion failed in LoadFileModule:', err);
     }
   };
 
   return (
     <div className="space-y-6">
+      {/* Document Upload Section */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4">{t('documentLoading')}</h2>
         <p className="text-gray-600 mb-4">
           {t('documentLoadingDesc')}
         </p>
-        
-        <div 
-          className={`border-2 border-dashed rounded-lg p-8 text-center ${
-            dragActive ? 'border-purple-500 bg-purple-50' : 'border-gray-300'
-          }`}
-          onDragEnter={handleDrag}
-          onDragOver={handleDrag}
-          onDragLeave={handleDrag}
-          onDrop={handleDrop}
-        >
-          <div className="space-y-4">
-            <div className="text-4xl">📄</div>
-            <p className="text-gray-700">
-              {t('dragDropFiles')}
-            </p>
-            <label className="inline-block px-4 py-2 bg-purple-600 text-white rounded-md cursor-pointer hover:bg-purple-700 transition-colors">
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+          <input
+            type="file"
+            multiple
+            onChange={handleFileChange}
+            className="hidden"
+            id="fileUpload"
+            accept=".pdf,.docx,.txt,.md,.csv"
+          />
+          <label htmlFor="fileUpload" className="cursor-pointer">
+            <div className="text-purple-600 mx-auto mb-4 w-16 h-16 flex items-center justify-center">
+              {/* Placeholder for a more relevant icon if needed */}
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75M3 17.25V6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5A2.25 2.25 0 0118.75 21H5.25A2.25 2.25 0 013 17.25z" />
+              </svg>
+            </div>
+            <p className="text-gray-700 mb-2">{t('dragDropFiles')}</p>
+            <button 
+              type="button" 
+              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+              onClick={() => document.getElementById('fileUpload').click()} // Trigger file input click
+            >
               {t('selectFiles')}
-              <input
-                type="file"
-                className="hidden"
-                accept=".pdf,.docx,.txt,.md,.csv"
-                onChange={handleChange}
-              />
-            </label>
-            <p className="text-sm text-gray-500">
-              {t('maxFileSize')}
-            </p>
-          </div>
+            </button>
+            <p className="text-xs text-gray-500 mt-2">{t('maxFileSize')}</p>
+          </label>
         </div>
+        {loading && <p className="text-purple-600 mt-4">{t('uploading')}</p>}
+        {error && <p className="text-red-500 mt-4">{t('uploadError')}: {error.message || error}</p>}
       </div>
-      
+
+      {/* Document List Section */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">{t('documentList')}</h2>
           <button 
-            onClick={onRefresh}
-            className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+            onClick={onRefresh} 
+            className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+            disabled={loading}
           >
             {t('refresh')}
           </button>
         </div>
-        
-        {loading ? (
-          <div className="text-center py-8">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-purple-600"></div>
-            <p className="mt-2 text-gray-600">{t('loading')}</p>
-          </div>
-        ) : documents.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <p>{t('noDocuments')}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('fileName')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('fileType')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('fileSize')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('uploadTime')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('pageCount')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {documents.map((doc) => (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('fileName')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('type')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('size')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('uploadTime')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('pages')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {documents && documents.length > 0 ? (
+                documents.map((doc) => (
                   <tr key={doc.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <span className="mr-2">
-                          {doc.file_type === 'pdf' ? '📕' :
-                           doc.file_type === 'docx' ? '📘' :
-                           doc.file_type === 'csv' ? '📊' :
-                           doc.file_type === 'txt' ? '📄' :
-                           doc.file_type === 'png' || doc.file_type === 'jpg' || doc.file_type === 'jpeg' || doc.file_type === 'webp' || doc.file_type === 'gif' ? '🖼️' :
-                           '📝'}
-                        </span>
-                        <span className="font-medium text-gray-900">{doc.filename}</span>
-                      </div>
+                      <span className="font-medium text-gray-900">{doc.filename}</span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                      {doc.file_type.toUpperCase()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                      {formatFileSize(doc.file_size)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                      {formatDate(doc.upload_time)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                      {doc.pages}
-                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.type}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.size}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.upload_time}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.pages}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button 
-                        onClick={() => handleDeleteClick(doc.id, doc.filename)} // Updated onClick handler
-                        className="text-red-600 hover:text-red-900"
+                        onClick={() => handleDelete(doc.id)} 
+                        className="text-red-600 hover:text-red-900 flex items-center"
+                        disabled={loading} // Disable button when loading
                       >
+                        <Trash2 size={18} className="mr-1" />
                         {t('delete')}
                       </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                    {t('noDocumentsUploaded')}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
+LoadFileModule.propTypes = {
+  documents: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    filename: PropTypes.string.isRequired,
+    type: PropTypes.string,
+    size: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    upload_time: PropTypes.string,
+    pages: PropTypes.number,
+  })).isRequired,
+  loading: PropTypes.bool.isRequired,
+  error: PropTypes.object, // Can be an Error object or null
+  onDocumentUpload: PropTypes.func.isRequired,
+  onDocumentDelete: PropTypes.func.isRequired, // Ensure this is required
+  onRefresh: PropTypes.func.isRequired,
+};
+
 export default LoadFileModule;
+
 

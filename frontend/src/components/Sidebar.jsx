@@ -8,8 +8,8 @@ function Sidebar({ activeModule, onModuleChange }) {
   const modules = [
     { id: 'chat', name: t('moduleChat'), icon: '💬' },
     { id: 'load', name: t('moduleLoad'), icon: '📄' },
-    { id: 'chunk', name: t('moduleChunk'), icon: '✂️' },
-    { id: 'parse', name: t('moduleParse'), icon: '🔍' },
+    { id: 'chunk', name: t('moduleChunk'), icon: '✂️' },      // chunk 提前
+    { id: 'parse', name: t('moduleParse'), icon: '🔍' },      // parse 后移
     { id: 'embedding', name: t('moduleEmbedding'), icon: '🧠' },
     { id: 'indexing', name: t('moduleIndexing'), icon: '📊' },
     { id: 'search', name: t('moduleSearch'), icon: '🔎' },

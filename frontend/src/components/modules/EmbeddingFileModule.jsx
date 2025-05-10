@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
 
-function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCreateEmbeddings, onEmbeddingDelete }) { // Add embeddings and onEmbeddingDelete props
+function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCreateEmbeddings, onEmbeddingDelete, globalSelectedDocument, onLoadEmbeddings }) {
   const { t } = useLanguage();
   const [selectedDocument, setSelectedDocument] = useState('');
   const [provider, setProvider] = useState(''); // Initialize empty
@@ -10,30 +10,69 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
   const [config, setConfig] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [embeddingResult, setEmbeddingResult] = useState(null); // Keep track of the last result for display
+  const [filteredEmbeddings, setFilteredEmbeddings] = useState([]);
 
-  // 加载配置
+  // 加载配置 - 使用缓存版本
   useEffect(() => {
     const fetchConfig = async () => {
       setConfigLoading(true);
-      const configData = await loadConfig();
-      setConfig(configData);
-      setConfigLoading(false);
-      
-      // 设置默认值 - 使用 embedding_models
-      if (configData && configData.embedding_models) {
-        const availableProviders = Object.keys(configData.embedding_models);
-        if (availableProviders.length > 0) {
-          const defaultProvider = availableProviders[0];
-          setProvider(defaultProvider);
-          if (configData.embedding_models[defaultProvider] && configData.embedding_models[defaultProvider].length > 0) {
-            setModel(configData.embedding_models[defaultProvider][0].id);
+      try {
+        // 使用 loadConfig() 获取缓存的配置
+        const configData = await loadConfig();
+        setConfig(configData);
+        
+        // 设置默认值 - 使用 embedding_models
+        if (configData && configData.embedding_models) {
+          const availableProviders = Object.keys(configData.embedding_models);
+          if (availableProviders.length > 0) {
+            const defaultProvider = availableProviders[0];
+            setProvider(defaultProvider);
+            if (configData.embedding_models[defaultProvider] && configData.embedding_models[defaultProvider].length > 0) {
+              setModel(configData.embedding_models[defaultProvider][0].id);
+            }
           }
         }
+      } catch (err) {
+        console.error("Failed to load config:", err);
+      } finally {
+        setConfigLoading(false);
       }
     };
     
     fetchConfig();
   }, []);
+
+  // Sync with global selected document if provided
+  useEffect(() => {
+    if (globalSelectedDocument && globalSelectedDocument.id) {
+      setSelectedDocument(globalSelectedDocument.id);
+    }
+  }, [globalSelectedDocument]);
+
+  // Reload embeddings when document selection changes
+  useEffect(() => {
+    if (selectedDocument && onLoadEmbeddings) {
+      // Reload embeddings when a document is selected to ensure we have the latest data
+      onLoadEmbeddings();
+    }
+  }, [selectedDocument, onLoadEmbeddings]);
+
+  // Filter embeddings when selectedDocument or embeddings change
+  useEffect(() => {
+    if (embeddings && embeddings.length > 0) {
+      if (selectedDocument) {
+        const filtered = embeddings.filter(embed => embed.document_id === selectedDocument);
+        setFilteredEmbeddings(filtered);
+        console.log(`Filtered ${filtered.length} embeddings for document ID ${selectedDocument}`);
+      } else {
+        setFilteredEmbeddings(embeddings);
+        console.log(`Showing all ${embeddings.length} embeddings - no document selected`);
+      }
+    } else {
+      setFilteredEmbeddings([]);
+      console.log('No embeddings available to filter');
+    }
+  }, [selectedDocument, embeddings]);
 
   // 处理提供商变更
   const handleProviderChange = (e) => {
@@ -46,6 +85,12 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
     } else {
       setModel(''); // Reset model if provider has no models
     }
+  };
+
+  // 处理文档选择变更
+  const handleDocumentChange = (e) => {
+    const newDocId = e.target.value;
+    setSelectedDocument(newDocId);
   };
 
   // 处理表单提交
@@ -85,7 +130,7 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
             </label>
             <select
               value={selectedDocument}
-              onChange={(e) => setSelectedDocument(e.target.value)}
+              onChange={handleDocumentChange}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
               required
               disabled={documents.length === 0}
@@ -167,7 +212,34 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
       
       {/* Display existing embeddings table */} 
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h2 className="text-xl font-semibold mb-4">{t('existingEmbeddings')}</h2> {/* Add translation key */} 
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">{t('existingEmbeddings')}</h2> 
+          
+          {/* Document filter selector */}
+          <div className="flex items-center">
+            <span className="text-sm text-gray-500 mr-2">{t('filterByDocument')}:</span>
+            <select
+              value={selectedDocument}
+              onChange={handleDocumentChange}
+              className="text-sm px-3 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+            >
+              <option value="">{t('allDocuments')}</option>
+              {documents.map((doc) => (
+                <option key={doc.id} value={doc.id}>
+                  {doc.filename}
+                </option>
+              ))}
+            </select>
+            {selectedDocument && (
+              <button 
+                onClick={() => setSelectedDocument('')}
+                className="ml-2 text-xs text-purple-600 hover:text-purple-800"
+              >
+                {t('clearFilter')}
+              </button>
+            )}
+          </div>
+        </div>
         
         {loading ? (
           <div className="text-center py-8">
@@ -176,57 +248,60 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
           </div>
         ) : (
           <div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('embeddingId')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('documentId')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('provider')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('embeddingModel')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('dimensions')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('vectorCount')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {Array.isArray(embeddings) && embeddings.map((emb) => {
-                    const doc = Array.isArray(documents) ? documents.find(d => d.id === emb.document_id) : null;
-                    return (
-                      <tr key={emb.embedding_id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{emb.embedding_id}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{doc ? doc.filename : emb.document_id}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getProviderDisplayName(emb.provider)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emb.model}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emb.dimensions}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emb.total_embeddings}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <button 
-                            onClick={() => onEmbeddingDelete(emb.embedding_id)} 
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            {t('delete')}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            
-            {Array.isArray(embeddings) && embeddings.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                <p>{t('noEmbeddings')}</p> {/* Use existing translation key */} 
+            {filteredEmbeddings.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('embeddingId')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('documentId')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('provider')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('embeddingModel')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('dimensions')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('vectorCount')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredEmbeddings.map((emb) => {
+                      const doc = Array.isArray(documents) ? documents.find(d => d.id === emb.document_id) : null;
+                      return (
+                        <tr key={emb.embedding_id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{emb.embedding_id}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{doc ? doc.filename : emb.document_id}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getProviderDisplayName(emb.provider)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emb.model}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emb.dimensions}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{emb.total_embeddings}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button 
+                              onClick={() => onEmbeddingDelete(emb.embedding_id)} 
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              {t('delete')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8 bg-gray-50 rounded-md">
+                {selectedDocument ? (
+                  <div>
+                    <p className="text-gray-600 mb-2">{t('noEmbeddingsForDocument')}</p>
+                    <p className="text-sm text-gray-500">{t('useFormAboveToCreateEmbeddings')}</p>
+                  </div>
+                ) : (
+                  <p className="text-gray-600">{t('noEmbeddingsAvailable')}</p>
+                )}
               </div>
             )}
           </div>
         )}
       </div>
-
-      {/* Keep the section for the last result if needed, or remove if redundant */} 
-      {/* {embeddingResult && (...)} */}
-      
     </div>
   );
 }

@@ -3,14 +3,18 @@ import json
 import datetime
 import uuid
 from typing import List, Dict, Any, Optional
+from langchain.text_splitter import RecursiveCharacterTextSplitter  # added langchain splitter import
+import re  # Added re for _chunk_by_langchain_recursive
+import html  # Added for unescaping HTML entities in PDF extraction
 
 class ChunkService:
     """文档分块服务，支持按字数、段落、标题等策略进行切分"""
     
-    def __init__(self, documents_dir="storage/documents", chunks_dir="storage/chunks"):
+    def __init__(self, documents_dir="01-loaded_docs", chunks_dir="02-chunked-docs"):  # Changed default documents_dir to 01-loaded_docs
         self.documents_dir = documents_dir
         self.chunks_dir = chunks_dir
-        os.makedirs(chunks_dir, exist_ok=True)
+        os.makedirs(self.documents_dir, exist_ok=True)  # Ensure documents_dir also exists
+        os.makedirs(self.chunks_dir, exist_ok=True)
     
     def create_chunks(self, document_id: str, strategy: str, chunk_size: int = 1000, overlap: int = 200) -> Dict[str, Any]:
         """
@@ -18,17 +22,22 @@ class ChunkService:
         
         参数:
             document_id: 文档ID
-            strategy: 分块策略 ("char_count", "paragraph", "heading")
+            strategy: 分块策略 ("char_count", "paragraph", "heading", "langchain_recursive", "by_sentences")
             chunk_size: 块大小（字符数）
             overlap: 重叠大小（字符数）
         
         返回:
             包含分块结果的字典
         """
+        print(f"[ChunkService.create_chunks] Received request to chunk document_id: '{document_id}', strategy: '{strategy}'")
+
         # 检查文档是否存在
         document_path = self._find_document(document_id)
         if not document_path:
+            print(f"[ChunkService.create_chunks] Error: Document not found by _find_document for ID: '{document_id}'")
             raise FileNotFoundError(f"找不到ID为{document_id}的文档")
+        
+        print(f"[ChunkService.create_chunks] Document found at path: '{document_path}'")
         
         # 读取文档内容
         file_ext = os.path.splitext(document_path)[1].lower()
@@ -36,12 +45,18 @@ class ChunkService:
         
         # 根据策略分块
         chunks = []
+        
+        # 根据指定的策略选择分块方法
         if strategy == "char_count":
             chunks = self._chunk_by_char_count(text_content, chunk_size, overlap)
         elif strategy == "paragraph":
             chunks = self._chunk_by_paragraph(text_content, chunk_size, overlap)
         elif strategy == "heading":
             chunks = self._chunk_by_heading(text_content, chunk_size, overlap)
+        elif strategy == "langchain_recursive":  # support new strategy
+            chunks = self._chunk_by_langchain_recursive(text_content, chunk_size, overlap)
+        elif strategy == "by_sentences":  # support sentence-based splitting
+            chunks = self._chunk_by_sentences(text_content, chunk_size, overlap)
         else:
             raise ValueError(f"不支持的分块策略: {strategy}")
         
@@ -83,27 +98,74 @@ class ChunkService:
             "result_file": result_file
         }
     
-    def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
-        """获取指定文档的所有分块结果"""
+    def get_document_chunks(self, document_id_filter: str) -> List[Dict[str, Any]]:
+        """获取指定文档的所有分块结果文件信息"""
         chunk_files = []
         
         if os.path.exists(self.chunks_dir):
             for filename in os.listdir(self.chunks_dir):
-                if filename.startswith(document_id) and filename.endswith("_chunks.json"):
+                # Filter by document_id if a specific one is requested for the list
+                # The filename of the chunk result itself contains the document_id
+                if document_id_filter and not filename.startswith(document_id_filter):
+                    continue
+                
+                if filename.endswith("_chunks.json"):
                     file_path = os.path.join(self.chunks_dir, filename)
-                    
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        chunk_data = json.load(f)
-                    
-                    chunk_files.append({
-                        "file": filename,
-                        "path": file_path,
-                        "timestamp": chunk_data.get("timestamp", ""),
-                        "strategy": chunk_data.get("strategy", ""),
-                        "total_chunks": chunk_data.get("total_chunks", 0)
-                    })
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            chunk_data = json.load(f)
+                        
+                        # Ensure the document_id from the content matches the filter if provided
+                        # This is a stricter check if document_id_filter is just a prefix
+                        if document_id_filter and chunk_data.get("document_id") != document_id_filter:
+                            continue
+
+                        chunk_files.append({
+                            "id": chunk_data.get("chunk_id"),  # This is the ID of the chunking operation
+                            "file": filename,
+                            "path": file_path,
+                            "timestamp": chunk_data.get("timestamp", ""),
+                            "strategy": chunk_data.get("strategy", ""),
+                            "chunk_size": chunk_data.get("chunk_size"), # Added chunk_size
+                            "overlap": chunk_data.get("overlap"),    # Added overlap
+                            "total_chunks": chunk_data.get("total_chunks", 0),
+                            "document_id": chunk_data.get("document_id") # Ensure this is included for filename lookup
+                        })
+                    except Exception as e:
+                        print(f"Error reading or parsing chunk file {filename}: {e}")
+                        # Optionally skip this file or handle error differently
+                        continue # Skip corrupted or unreadable chunk files
         
         return chunk_files
+    
+    def delete_chunk_result(self, chunk_id: str) -> str:
+        """删除指定的分块结果文件 (e.g., documentId_timestamp_chunk_id_chunks.json)"""
+        if not os.path.exists(self.chunks_dir):
+            raise FileNotFoundError("Chunks directory does not exist.")
+
+        found_file = None
+        for filename in os.listdir(self.chunks_dir):
+            if filename.endswith("_chunks.json"):
+                file_path_to_check = os.path.join(self.chunks_dir, filename)
+                try:
+                    with open(file_path_to_check, 'r', encoding='utf-8') as f_check:
+                        data = json.load(f_check)
+                    if data.get("chunk_id") == chunk_id:
+                        found_file = filename
+                        break
+                except Exception:
+                    # Skip files that can't be read or parsed
+                    continue 
+
+        if found_file:
+            file_to_delete = os.path.join(self.chunks_dir, found_file)
+            try:
+                os.remove(file_to_delete)
+                return f"Chunk result file '{found_file}' deleted successfully."
+            except OSError as e:
+                raise Exception(f"Error deleting file '{found_file}': {e}")
+        else:
+            raise FileNotFoundError(f"Chunk result file containing chunk_id '{chunk_id}' not found.")
     
     def get_chunk_by_id(self, chunk_id: str) -> Optional[Dict[str, Any]]:
         """获取指定ID的分块结果"""
@@ -127,12 +189,126 @@ class ChunkService:
         return None
     
     def _find_document(self, document_id: str) -> Optional[str]:
-        """查找指定ID的文档路径"""
-        if os.path.exists(self.documents_dir):
-            for filename in os.listdir(self.documents_dir):
-                if document_id in filename:
-                    return os.path.join(self.documents_dir, filename)
-        return None
+        """
+        Finds the path to the actual content file (e.g., PDF, TXT) that needs to be chunked.
+        1. It uses the document_id to locate a metadata JSON file in self.documents_dir ('01-loaded_docs').
+           The JSON filename is expected to start with the document_id.
+        2. It reads this metadata JSON.
+        3. It extracts the path to the original content file (expected to be in 'storage/documents/')
+           from a field within the JSON (e.g., 'content_storage_path', 'original_file_path').
+        4. Returns the resolved, absolute path to the content file.
+        """
+        print(f"[ChunkService._find_document] Attempting to find content file for document_id: '{document_id}'")
+        
+        # self.documents_dir is '01-loaded_docs' (where metadata JSONs are)
+        abs_metadata_dir = os.path.abspath(self.documents_dir)
+        print(f"[ChunkService._find_document] Metadata directory (self.documents_dir): '{self.documents_dir}', Absolute path: '{abs_metadata_dir}'")
+
+        if not os.path.exists(abs_metadata_dir):
+            print(f"[ChunkService._find_document] Error: Metadata directory does not exist at '{abs_metadata_dir}'")
+            return None
+
+        # Find the metadata JSON file associated with the document_id
+        found_metadata_json_path = None
+        print(f"[ChunkService._find_document] Searching for metadata JSON in '{abs_metadata_dir}' starting with document_id '{document_id}'...")
+        for filename in os.listdir(abs_metadata_dir):
+            if filename.startswith(document_id) and filename.endswith('.json'):
+                found_metadata_json_path = os.path.join(abs_metadata_dir, filename)
+                print(f"[ChunkService._find_document] Found metadata JSON file: '{found_metadata_json_path}'")
+                break
+        
+        if not found_metadata_json_path:
+            print(f"[ChunkService._find_document] Error: No metadata JSON file found in '{abs_metadata_dir}' starting with '{document_id}'")
+            return None
+
+        # Load the metadata JSON
+        try:
+            with open(found_metadata_json_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            print(f"[ChunkService._find_document] Successfully loaded metadata from '{found_metadata_json_path}'")
+        except Exception as e:
+            print(f"[ChunkService._find_document] Error loading or parsing metadata JSON '{found_metadata_json_path}': {e}")
+            return None
+
+        # Extract the content file path from the metadata
+        # Try common keys where the path to the original file in storage/documents might be stored.
+        potential_path_keys = ['content_storage_path', 'original_file_path', 'file_path', 'source_path', 'document_path']
+        content_file_path_from_metadata = None
+        for key in potential_path_keys:
+            if key in metadata and isinstance(metadata[key], str):
+                content_file_path_from_metadata = metadata[key]
+                print(f"[ChunkService._find_document] Found path in metadata key '{key}': '{content_file_path_from_metadata}'")
+                break
+        
+        if not content_file_path_from_metadata:
+            print(f"[ChunkService._find_document] Preferred path keys not found in metadata JSON '{found_metadata_json_path}'. Searched keys: {potential_path_keys}.")
+            print(f"[ChunkService._find_document] Attempting fallback: constructing path using document_id '{document_id}' and trying to determine extension.")
+            
+            workspace_root = os.path.abspath(os.path.join(abs_metadata_dir, "..", "..")) # Navigate from backend/01-loaded_docs to workspace root
+            
+            # Try to get original extension from metadata if LoadService stores it (e.g., as "file_extension": ".pdf")
+            original_extension = metadata.get("file_extension") or metadata.get("extension")
+            
+            if original_extension:
+                # Ensure original_extension starts with a dot
+                if not original_extension.startswith('.'):
+                    original_extension = '.' + original_extension
+                
+                potential_path = os.path.join(workspace_root, "storage", "documents", document_id + original_extension)
+                if os.path.exists(potential_path):
+                    content_file_path_from_metadata = potential_path
+                    print(f"[ChunkService._find_document] Fallback using document_id and 'extension' ('{original_extension}') from metadata: '{content_file_path_from_metadata}'")
+                else:
+                    print(f"[ChunkService._find_document] Path constructed with extension from metadata ('{potential_path}') does not exist.")
+
+            # If extension not in metadata or path constructed with it didn't exist, try common extensions
+            if not content_file_path_from_metadata:
+                print(f"[ChunkService._find_document] Extension not found/used from metadata. Trying common extensions with document_id '{document_id}'.")
+                possible_extensions = ['.pdf', '.txt', '.md', '.docx'] 
+                for ext_to_try in possible_extensions:
+                    potential_path = os.path.join(workspace_root, "storage", "documents", document_id + ext_to_try)
+                    if os.path.exists(potential_path):
+                        content_file_path_from_metadata = potential_path
+                        print(f"[ChunkService._find_document] Fallback successful: Found content file by appending extension '{ext_to_try}': '{content_file_path_from_metadata}'")
+                        break
+            
+            if not content_file_path_from_metadata:        
+                print(f"[ChunkService._find_document] Fallback failed: Could not determine content file path in 'storage/documents/' for document_id '{document_id}' after trying extensions.")
+                return None
+
+        # Resolve the path (it could be absolute, or relative to workspace)
+        resolved_content_path = ""
+        if os.path.isabs(content_file_path_from_metadata):
+            resolved_content_path = content_file_path_from_metadata
+            print(f"[ChunkService._find_document] Path from metadata is absolute: '{resolved_content_path}'")
+        else:
+            # Assume relative to workspace root if not absolute
+            workspace_root = os.path.abspath(os.path.join(abs_metadata_dir, "..", "..")) # From backend/01-loaded_docs to workspace root
+            resolved_content_path = os.path.normpath(os.path.join(workspace_root, content_file_path_from_metadata))
+            print(f"[ChunkService._find_document] Path from metadata is relative. Resolved against workspace root '{workspace_root}' to: '{resolved_content_path}'")
+
+        if not os.path.exists(resolved_content_path):
+            print(f"[ChunkService._find_document] Error: Resolved content file path does not exist: '{resolved_content_path}'")
+            # Try one more common case: path was relative to the JSON file's location itself
+            if not os.path.isabs(content_file_path_from_metadata):
+                path_relative_to_json = os.path.normpath(os.path.join(os.path.dirname(found_metadata_json_path), content_file_path_from_metadata))
+                print(f"[ChunkService._find_document] Trying path relative to JSON location: '{path_relative_to_json}'")
+                if os.path.exists(path_relative_to_json):
+                    resolved_content_path = path_relative_to_json
+                    print(f"[ChunkService._find_document] Success: Path relative to JSON location exists: '{resolved_content_path}'")
+                else:
+                    print(f"[ChunkService._find_document] Path relative to JSON location also does not exist.")
+                    return None
+            else: # If it was absolute and didn't exist, then it's just not there.
+                 return None
+
+
+        if not os.path.isfile(resolved_content_path):
+            print(f"[ChunkService._find_document] Error: Resolved content path is not a file: '{resolved_content_path}'")
+            return None
+            
+        print(f"[ChunkService._find_document] Successfully determined and validated content file path: '{resolved_content_path}'")
+        return resolved_content_path
     
     def _extract_text(self, file_path: str, file_ext: str) -> str:
         """从文档中提取文本内容"""
@@ -146,16 +322,83 @@ class ChunkService:
             raise ValueError(f"不支持的文件类型: {file_ext}")
     
     def _extract_text_from_pdf(self, file_path: str) -> str:
-        """从PDF文件中提取文本"""
+        """从PDF文件中提取文本，保留更好的格式和布局"""
         try:
             import fitz  # PyMuPDF
             doc = fitz.open(file_path)
             text = ""
-            for page in doc:
-                text += page.get_text()
+            
+            # 设置更详细的文本提取参数
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                
+                # 尝试用HTML模式提取文本以保留更多格式信息
+                try:
+                    page_text = page.get_text("html")
+                    page_text = re.sub(r'<(head|style)>.*?</(head|style)>', '', page_text, flags=re.DOTALL | re.IGNORECASE)
+                    page_text = re.sub(r'<img[^>]*>', '', page_text, flags=re.IGNORECASE)
+                    page_text = re.sub(r'<br[^>]*>', '\n', page_text, flags=re.IGNORECASE)
+                    page_text = re.sub(r'<p[^>]*>', '\n\n', page_text, flags=re.IGNORECASE)
+                    page_text = re.sub(r'<div[^>]*>', '\n', page_text, flags=re.IGNORECASE)
+                    page_text = re.sub(r'<li[^>]*>', '\n- ', page_text, flags=re.IGNORECASE)
+                    page_text = re.sub(r'<[^>]*>', '', page_text)
+                    page_text = html.unescape(page_text)
+                except Exception as e_html:
+                    print(f"[ChunkService._extract_text_from_pdf] HTML extraction failed for page {page_num}: {e_html}. Falling back to text.")
+                    page_text = page.get_text("text", flags=fitz.TEXT_DEHYPHENATE | fitz.TEXT_PRESERVE_LIGATURES | fitz.TEXT_PRESERVE_WHITESPACE)
+                
+                if page_num > 0:
+                    text += "\n\n"
+                text += f"[页码: {page_num + 1}]\n"
+                text += page_text.strip()
+            
+            lines = text.splitlines()
+            cleaned_lines = []
+            for line in lines:
+                if line.strip() or re.match(r'^\[页码:\s*\d+\]$', line):
+                     cleaned_lines.append(line)
+            text = '\n'.join(cleaned_lines)
+            
+            text = re.sub(r'(?<!\n) +', ' ', text)
+
+            paragraphs = []
+            current_paragraph_lines = []
+            for line in text.splitlines():
+                if re.match(r'^\[页码:\s*\d+\]$', line):
+                    if current_paragraph_lines:
+                        paragraphs.append(" ".join(current_paragraph_lines))
+                        current_paragraph_lines = []
+                    paragraphs.append(line)
+                elif not line.strip():
+                    if current_paragraph_lines:
+                        paragraphs.append(" ".join(current_paragraph_lines))
+                        current_paragraph_lines = []
+                else:
+                    current_paragraph_lines.append(line.strip())
+            
+            if current_paragraph_lines:
+                paragraphs.append(" ".join(current_paragraph_lines))
+
+            text = '\n\n'.join(paragraphs)
+            
             return text
+            
         except Exception as e:
-            raise Exception(f"PDF文本提取失败: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"PDF文本提取失败: {str(e)}\n{error_details}")
+            try:
+                print("尝试使用备用方法提取PDF文本...")
+                doc = fitz.open(file_path)
+                text = ""
+                for page_num in range(len(doc)):
+                    page = doc[page_num]
+                    text += f"[页码: {page_num + 1}]\n"
+                    text += page.get_text("text")
+                    text += "\n\n"
+                return text
+            except Exception as e2:
+                raise Exception(f"PDF文本提取失败 (包括备用方法): {str(e)}, 备用方法错误: {str(e2)}")
     
     def _extract_text_from_docx(self, file_path: str) -> str:
         """从DOCX文件中提取文本"""
@@ -178,26 +421,20 @@ class ChunkService:
         """按字符数分块"""
         chunks = []
         
-        # 确保重叠不超过块大小
         if overlap >= chunk_size:
             overlap = chunk_size // 2
         
-        # 计算起始位置
         start_positions = list(range(0, len(text), chunk_size - overlap))
         
         for i, start in enumerate(start_positions):
-            # 计算结束位置
             end = min(start + chunk_size, len(text))
             
-            # 如果是最后一个块且太小，则合并到前一个块
             if end == len(text) and end - start < chunk_size // 2 and i > 0:
                 continue
             
-            # 提取文本块
             chunk_text = text[start:end]
             
-            # 估计页码（简化处理）
-            estimated_page = i // 3 + 1  # 假设每页约3个块
+            estimated_page = i // 3 + 1
             
             chunks.append({
                 "content": chunk_text,
@@ -206,7 +443,6 @@ class ChunkService:
                 "page": estimated_page
             })
             
-            # 如果已经到达文本末尾，结束循环
             if end == len(text):
                 break
         
@@ -214,7 +450,6 @@ class ChunkService:
     
     def _chunk_by_paragraph(self, text: str, chunk_size: int, overlap: int) -> List[Dict[str, Any]]:
         """按段落分块"""
-        # 分割段落
         paragraphs = [p for p in text.split('\n') if p.strip()]
         
         chunks = []
@@ -223,10 +458,8 @@ class ChunkService:
         start_pos = 0
         
         for para in paragraphs:
-            # 如果添加这个段落会超过块大小，且当前块不为空，则保存当前块
             if len(current_chunk) + len(para) > chunk_size and current_chunk:
-                # 估计页码
-                estimated_page = len(chunks) // 3 + 1  # 假设每页约3个块
+                estimated_page = len(chunks) // 3 + 1
                 
                 chunks.append({
                     "content": current_chunk,
@@ -235,24 +468,20 @@ class ChunkService:
                     "page": estimated_page
                 })
                 
-                # 计算新的起始位置，考虑重叠
                 overlap_chars = min(overlap, len(current_chunk))
                 current_start = current_start + len(current_chunk) - overlap_chars
                 start_pos = current_start
                 
-                # 重置当前块，可能包含前一个块的结尾（重叠部分）
                 if overlap_chars > 0:
                     current_chunk = current_chunk[-overlap_chars:] + "\n" + para
                 else:
                     current_chunk = para
             else:
-                # 添加段落到当前块
                 if current_chunk:
                     current_chunk += "\n" + para
                 else:
                     current_chunk = para
         
-        # 添加最后一个块
         if current_chunk:
             estimated_page = len(chunks) // 3 + 1
             chunks.append({
@@ -266,63 +495,26 @@ class ChunkService:
     
     def _chunk_by_heading(self, text: str, chunk_size: int, overlap: int) -> List[Dict[str, Any]]:
         """按标题分块"""
-        # 简单的标题检测（以#开头的行或者全大写的短行）
         lines = text.split('\n')
         sections = []
         current_section = {"title": "", "content": ""}
         
         for line in lines:
-            # 检测是否为标题
             is_heading = (line.startswith('#') or 
                          (line.isupper() and len(line) < 100 and line.strip()))
             
             if is_heading:
-                # 保存前一个章节
                 if current_section["content"]:
                     sections.append(current_section)
                 
-                # 开始新章节
                 current_section = {"title": line, "content": ""}
             else:
-                # 添加内容到当前章节
                 if current_section["content"]:
                     current_section["content"] += "\n" + line
                 else:
                     current_section["content"] = line
         
-        # 添加最后一个章节
-        if current_section["content"]:
+        if current_section["content"] or current_section["title"]:
             sections.append(current_section)
         
-        # 将章节转换为块
-        chunks = []
-        start_pos = 0
-        
-        for i, section in enumerate(sections):
-            section_text = section["title"] + "\n" + section["content"]
-            
-            # 如果章节太大，进一步分块
-            if len(section_text) > chunk_size:
-                # 使用字符分块方法处理大章节
-                sub_chunks = self._chunk_by_char_count(section_text, chunk_size, overlap)
-                
-                # 调整起始位置
-                for sub_chunk in sub_chunks:
-                    sub_chunk["start_pos"] += start_pos
-                    sub_chunk["end_pos"] += start_pos
-                    sub_chunk["page"] = i + 1  # 假设每个章节对应一页
-                
-                chunks.extend(sub_chunks)
-            else:
-                # 章节足够小，直接作为一个块
-                chunks.append({
-                    "content": section_text,
-                    "start_pos": start_pos,
-                    "end_pos": start_pos + len(section_text),
-                    "page": i + 1  # 假设每个章节对应一页
-                })
-            
-            # 更新起始位置
-            start_pos += len(section_text) + 1  # +1 for newline
-        
-        return chunks
+        return sections

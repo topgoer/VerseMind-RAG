@@ -6,7 +6,7 @@ import os
 logging.basicConfig(level=logging.INFO)
 
 # 导入API路由
-from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api
+from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api, debug
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -35,19 +35,36 @@ api_router.include_router(embeddings.router, prefix="/embeddings", tags=["embedd
 api_router.include_router(index.router, prefix="/index", tags=["index"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(generate.router, prefix="/generate", tags=["generate"])
+api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
 
 # 将路由添加到应用
 app.include_router(api_router, prefix="/api")
 app.include_router(config_api.router, prefix="/api")
+app.include_router(index.router, prefix="/api/indices")
+app.include_router(embeddings.router, prefix="/api/embeddings")
+app.include_router(search.router, prefix="/api/search")
 
 # 创建必要的存储目录
 @app.on_event("startup")
 async def startup_event():
-    os.makedirs("storage/documents", exist_ok=True)
-    os.makedirs("storage/chunks", exist_ok=True)
-    os.makedirs("storage/embeddings", exist_ok=True)
-    os.makedirs("storage/indices", exist_ok=True)
-    os.makedirs("storage/results", exist_ok=True)
+    # 定义所有必要的目录路径 - 保持唯一性
+    required_dirs = [
+        # 原始文档
+        "storage/documents",
+        # 数据处理流程目录
+        "backend/01-loaded_docs",
+        "backend/02-chunked-docs", 
+        "backend/03-parsed-docs",
+        "backend/04-embedded-docs",
+        # 索引与结果存储
+        "backend/storage/indices",
+        "backend/storage/results"
+    ]
+    
+    # 创建所有必要的目录
+    for dir_path in required_dirs:
+        os.makedirs(dir_path, exist_ok=True)
+        print(f"[startup] Created directory: {dir_path}")
 
 # 根路由
 @app.get("/")

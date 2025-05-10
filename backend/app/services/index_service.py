@@ -4,6 +4,26 @@ import datetime
 import uuid
 import numpy as np
 from typing import Dict, List, Any, Optional
+from enum import Enum
+from pymilvus import connections, utility, Collection, DataType, FieldSchema, CollectionSchema
+
+class VectorDBProvider(str, Enum):
+    FAISS = "faiss"
+    CHROMA = "chroma"
+    MILVUS = "milvus"
+
+class VectorDBConfig:
+    """
+    Configuration for Milvus vector database
+    """
+    def __init__(self, index_mode: str):
+        self.provider = VectorDBProvider.MILVUS.value
+        self.index_mode = index_mode
+        self.milvus_uri = os.getenv("MILVUS_URI", "127.0.0.1:19530")
+
+    def get_index_params(self):
+        # default params, could extend via env or config file
+        return {"metric_type": "COSINE"}
 
 class IndexService:
     """向量索引服务，支持FAISS和Chroma向量数据库"""
@@ -13,25 +33,31 @@ class IndexService:
         self.indices_dir = indices_dir
         os.makedirs(indices_dir, exist_ok=True)
     
-    def create_index(self, document_id: str, vector_db: str, collection_name: str, index_name: str, version: str = "1.0") -> Dict[str, Any]:
+    def create_index(self, document_id: str, vector_db: str, collection_name: str, index_name: str, embedding_id: str, version: str = "1.0") -> Dict[str, Any]:
         """
         创建向量索引
         
         参数:
             document_id: 文档ID
-            vector_db: 向量数据库类型 ("faiss", "chroma")
+            vector_db: 向量数据库类型 ("faiss", "chroma", "milvus")
             collection_name: 集合名称
             index_name: 索引名称
+            embedding_id: 嵌入ID (用于查找对应的嵌入文件)
             version: 索引版本
         
         返回:
             包含索引结果的字典
         """
+        print(f"[SERVICE LOG IndexService.create_index] Called with: document_id='{document_id}', vector_db='{vector_db}', collection_name='{collection_name}', index_name='{index_name}', embedding_id='{embedding_id}', version='{version}'")
         # 检查嵌入是否存在
-        embedding_file = self._find_embedding_file(document_id)
+        embedding_file = self._find_embedding_file(document_id, embedding_id) # Pass embedding_id
         if not embedding_file:
-            raise FileNotFoundError(f"请先为文档ID {document_id} 创建嵌入向量")
+            # Updated error message to include embedding_id
+            error_message = f"请先为文档ID {document_id} (使用嵌入ID: {embedding_id}) 创建嵌入向量"
+            print(f"[SERVICE ERROR IndexService.create_index] {error_message}")
+            raise FileNotFoundError(error_message)
         
+        print(f"[SERVICE LOG IndexService.create_index] Found embedding file: {embedding_file}")
         # 读取嵌入数据
         with open(embedding_file, "r", encoding="utf-8") as f:
             embedding_data = json.load(f)
@@ -46,10 +72,15 @@ class IndexService:
         index_id = str(uuid.uuid4())[:8]
         
         # 根据向量数据库类型创建索引
-        if vector_db == "faiss":
+        if vector_db == VectorDBProvider.FAISS.value:
             index_info = self._create_faiss_index(embeddings, collection_name, index_name)
-        elif vector_db == "chroma":
+        elif vector_db == VectorDBProvider.CHROMA.value:
             index_info = self._create_chroma_index(embeddings, collection_name, index_name)
+        elif vector_db == VectorDBProvider.MILVUS.value:
+            # use Milvus for index
+            config = VectorDBConfig(index_mode=index_name)
+            milvus_result = self._index_to_milvus(embeddings, collection_name, config)
+            index_info = milvus_result  # contains collection_name and index_size
         else:
             raise ValueError(f"不支持的向量数据库类型: {vector_db}")
         
@@ -137,20 +168,121 @@ class IndexService:
         index_data["result_file"] = new_file
         return index_data
     
-    def _find_embedding_file(self, document_id: str) -> Optional[str]:
-        """查找指定文档的嵌入文件"""
+    def delete_index(self, index_id: str) -> Dict[str, Any]:
+        """
+        删除指定ID的索引
+        
+        参数:
+            index_id: 索引ID
+            
+        返回:
+            包含删除结果的字典
+        """
+        # 查找索引文件
+        index_file = self._find_index_file(index_id)
+        if not index_file:
+            raise FileNotFoundError(f"找不到ID为 {index_id} 的索引")
+        
+        # 读取索引数据，保留一些信息用于返回
+        with open(index_file, "r", encoding="utf-8") as f:
+            index_data = json.load(f)
+        
+        # 获取必要信息
+        document_id = index_data.get("document_id", "")
+        vector_db = index_data.get("vector_db", "")
+        collection_name = index_data.get("collection_name", "")
+        index_name = index_data.get("index_name", "")
+        
+        # 根据向量库类型执行清理操作
+        try:
+            if vector_db == VectorDBProvider.MILVUS.value:
+                # 如果是Milvus，可能需要删除集合
+                try:
+                    connections.connect(alias="default", uri=VectorDBConfig("default").milvus_uri)
+                    if utility.has_collection(collection_name):
+                        utility.drop_collection(collection_name)
+                except Exception as e:
+                    print(f"Milvus清理错误 (非致命): {str(e)}")
+                finally:
+                    try:
+                        connections.disconnect("default")
+                    except:
+                        pass
+            
+            # 删除索引文件
+            os.remove(index_file)
+            
+            # 返回删除成功信息
+            return {
+                "status": "success",
+                "message": f"索引 {index_id} 已删除",
+                "index_id": index_id,
+                "document_id": document_id,
+                "vector_db": vector_db,
+                "collection_name": collection_name,
+                "index_name": index_name
+            }
+        except Exception as e:
+            raise Exception(f"删除索引时发生错误: {str(e)}")
+    
+    def _find_embedding_file(self, document_id: str, embedding_id: str) -> Optional[str]:
+        """查找指定文档和嵌入ID的嵌入文件"""
+        print(f"[SERVICE LOG IndexService._find_embedding_file] Searching for embedding file with document_id='{document_id}' and embedding_id='{embedding_id}' in directory='{self.embeddings_dir}'")
         if os.path.exists(self.embeddings_dir):
+            print(f"[SERVICE LOG IndexService._find_embedding_file] Directory '{self.embeddings_dir}' exists. Listing files...")
             for filename in os.listdir(self.embeddings_dir):
-                if filename.startswith(document_id) and filename.endswith("_embeddings.json"):
-                    return os.path.join(self.embeddings_dir, filename)
+                print(f"[SERVICE LOG IndexService._find_embedding_file] Checking file: '{filename}'")
+                # First, check if document_id is in filename and it's a .json file ending with _embedded.json
+                if document_id in filename and filename.endswith("_embedded.json"):
+                    print(f"[SERVICE LOG IndexService._find_embedding_file] Candidate file (matches document_id and suffix): '{filename}'")
+                    file_path = os.path.join(self.embeddings_dir, filename)
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            embedding_data = json.load(f)
+                        # Now check if the embedding_id inside the JSON matches the target embedding_id
+                        internal_embedding_id = embedding_data.get("embedding_id") # Or however it's named in your JSON
+                        if internal_embedding_id == embedding_id:
+                            print(f"[SERVICE LOG IndexService._find_embedding_file] Match found: Internal embedding_id ('{internal_embedding_id}') matches target ('{embedding_id}'). File: '{file_path}'")
+                            return file_path
+                        else:
+                            print(f"[SERVICE LOG IndexService._find_embedding_file] File '{filename}' matches document_id, but its internal embedding_id ('{internal_embedding_id}') does not match target ('{embedding_id}').")
+                    except json.JSONDecodeError:
+                        print(f"[SERVICE WARNING IndexService._find_embedding_file] Could not decode JSON from candidate file: '{filename}'")
+                    except Exception as e:
+                        print(f"[SERVICE WARNING IndexService._find_embedding_file] Error reading or processing candidate file '{filename}': {e}")
+            print(f"[SERVICE LOG IndexService._find_embedding_file] No matching file found after checking all candidate files in '{self.embeddings_dir}'.")
+        else:
+            print(f"[SERVICE ERROR IndexService._find_embedding_file] Embeddings directory '{self.embeddings_dir}' does not exist.")
         return None
     
     def _find_index_file(self, index_id: str) -> Optional[str]:
         """查找指定ID的索引文件"""
+        print(f"[SERVICE LOG IndexService._find_index_file] Searching for index file with index_id='{index_id}' in directory='{self.indices_dir}'")
         if os.path.exists(self.indices_dir):
+            print(f"[SERVICE LOG IndexService._find_index_file] Directory '{self.indices_dir}' exists. Listing files...")
             for filename in os.listdir(self.indices_dir):
-                if index_id in filename and filename.endswith(".json"):
-                    return os.path.join(self.indices_dir, filename)
+                if filename.endswith(".json"):
+                    file_path = os.path.join(self.indices_dir, filename)
+                    print(f"[SERVICE LOG IndexService._find_index_file] Checking file: '{filename}'")
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            index_data = json.load(f)
+                        
+                        # Check if the index_id inside the JSON matches the target index_id
+                        internal_index_id = index_data.get("index_id")
+                        print(f"[SERVICE LOG IndexService._find_index_file] File '{filename}' has internal index_id: '{internal_index_id}'")
+                        
+                        if internal_index_id == index_id:
+                            print(f"[SERVICE LOG IndexService._find_index_file] Match found: File '{filename}' contains index_id='{index_id}'")
+                            return file_path
+                    except json.JSONDecodeError:
+                        print(f"[SERVICE WARNING IndexService._find_index_file] Could not decode JSON from file: '{filename}'")
+                    except Exception as e:
+                        print(f"[SERVICE WARNING IndexService._find_index_file] Error reading or processing file '{filename}': {str(e)}")
+            
+            print(f"[SERVICE WARNING IndexService._find_index_file] No index file with index_id='{index_id}' found in '{self.indices_dir}'")
+        else:
+            print(f"[SERVICE ERROR IndexService._find_index_file] Indices directory '{self.indices_dir}' does not exist")
         return None
     
     def _create_faiss_index(self, embeddings: List[Dict[str, Any]], collection_name: str, index_name: str) -> Dict[str, Any]:
@@ -199,3 +331,28 @@ class IndexService:
             return index_info
         except Exception as e:
             raise Exception(f"Chroma索引创建失败: {str(e)}")
+    
+    def _index_to_milvus(self, embeddings: List[Dict[str, Any]], collection_name: str, config: VectorDBConfig) -> Dict[str, Any]:
+        """
+        Insert embeddings into Milvus collection
+        """
+        # connect to Milvus
+        connections.connect(alias="default", uri=config.milvus_uri)
+        try:
+            # prepare schema
+            dim = len(embeddings[0].get("vector", [])) if embeddings else 0
+            fields = [
+                FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+                FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dim, params=config.get_index_params()),
+            ]
+            schema = CollectionSchema(fields=fields, description=f"Milvus collection for {collection_name}")
+            collection = Collection(name=collection_name, schema=schema)
+            # insert data
+            vectors = [emb.get("vector", []) for emb in embeddings]
+            insert_result = collection.insert([vectors])
+            # create index
+            collection.create_index(field_name="vector", index_params=config.get_index_params())
+            collection.load()
+            return {"collection_name": collection_name, "index_size": len(insert_result.primary_keys)}
+        finally:
+            connections.disconnect("default")
