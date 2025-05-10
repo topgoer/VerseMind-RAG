@@ -27,3 +27,9 @@ boto3  # added to support AWS Bedrock embeddings with EmbeddingService
 pymilvus>=2.3.0
 grpcio>=1.54.0
 protobuf
+pypdf  # added to support PDF reading and processing
+cloudpickle>=2.2.1  # Required by sagemaker
+docker  # Required by sagemaker
+jsonschema  # Required by sagemaker
+attrs<24,>=23.1.0  # Resolve version conflict for sagemaker
+importlib-metadata<7.0,>=1.4.0  # Resolve version conflict for sagemaker

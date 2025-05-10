@@ -29,10 +29,15 @@ torchaudio = "*"
 pdf2image = "*"
 "pdfminer.six" = "20201018"
 pycryptodome = "*"
-pypdf = "*"
+pypdf = "*"  # Ensure pypdf is included for PDF processing
 pymilvus = "^2.3.0"  # Milvus Python client
 grpcio = "^1.54.0"  # gRPC runtime for Milvus client
 protobuf = "*"  # Protocol buffers support
+cloudpickle = ">=2.2.1"  # Required by sagemaker
+docker = "*"  # Required by sagemaker
+jsonschema = "*"  # Required by sagemaker
+attrs = "<24,>=23.1.0"  # Resolve version conflict for sagemaker
+importlib-metadata = "<7.0,>=1.4.0"  # Resolve version conflict for sagemaker
 
 [tool.poetry.group.dev.dependencies]
 pytest = "8.3.5"
