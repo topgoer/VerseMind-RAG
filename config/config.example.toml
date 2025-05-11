@@ -122,8 +122,22 @@ openai = [
 
 [vector_databases]
 faiss = { name = "FAISS", description = "Facebook AI Similarity Search", local = true }
-
 chroma = { name = "Chroma", description = "Chroma Vector Database", local = true }
+
+# Vector store configuration
+[vector_store]
+type = "faiss"  # Options: "faiss", "chroma"
+persist_directory = "./storage/vector_db"
+
+# FAISS specific settings
+[vector_store.faiss]
+index_type = "HNSW32"  # Options: "Flat", "HNSW32", "HNSW64"
+metric = "cosine"      # Options: "cosine", "l2", "ip"
+
+# Chroma specific settings
+[vector_store.chroma]
+collection_name = "versemind_docs"
+distance_function = "cosine"  # Options: "cosine", "l2", "ip"
 
 [app]
 name = "VerseMind-RAG"

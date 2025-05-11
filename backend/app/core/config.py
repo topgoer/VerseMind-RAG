@@ -30,6 +30,22 @@ class Settings:
         self.CHUNKS_DIR = str(BACKEND_ROOT / raw_chunks_dir)
         self.PARSED_DIR = str(BACKEND_ROOT / raw_parsed_dir)
         
+        # Vector store configuration
+        vector_store_config = config_data.get("vector_store", {})
+        self.VECTOR_STORE_TYPE = vector_store_config.get("type", "faiss")
+        raw_persist_directory = vector_store_config.get("persist_directory", "./storage/vector_db")
+        self.VECTOR_STORE_PERSIST_DIR = str(BACKEND_ROOT.parent / raw_persist_directory.lstrip("./"))
+        
+        # FAISS specific configuration
+        faiss_config = vector_store_config.get("faiss", {})
+        self.FAISS_INDEX_TYPE = faiss_config.get("index_type", "HNSW32")
+        self.FAISS_METRIC = faiss_config.get("metric", "cosine")
+        
+        # Chroma specific configuration
+        chroma_config = vector_store_config.get("chroma", {})
+        self.CHROMA_COLLECTION_NAME = chroma_config.get("collection_name", "versemind_docs")
+        self.CHROMA_DISTANCE_FUNCTION = chroma_config.get("distance_function", "cosine")
+        
         # Add other settings as needed, for example:
         # self.LOG_LEVEL = config_data.get("LOGGING", {}).get("LEVEL", "INFO")
 

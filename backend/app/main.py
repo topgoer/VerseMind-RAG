@@ -2,8 +2,32 @@ import logging
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import sys
 
-logging.basicConfig(level=logging.INFO)
+# 设置基本日志配置
+logging.basicConfig(level=logging.WARNING)  # 将默认日志级别提高到 WARNING
+
+# 创建一个将标准输出重定向到日志系统的处理程序
+class PrintToLogger:
+    def __init__(self, logger, level):
+        self.logger = logger
+        self.level = level
+        self.linebuf = ''
+        
+    def write(self, buf):
+        for line in buf.rstrip().splitlines():
+            if line.strip() and '[ChunkService' in line:
+                self.logger.log(self.level, line.rstrip())
+    
+    def flush(self):
+        pass
+
+# 创建一个专门用于捕获 ChunkService 输出的日志器
+chunk_logger = logging.getLogger('ChunkService')
+chunk_logger.setLevel(logging.WARNING)  # 只显示警告和错误
+
+# 重定向标准输出，只捕获 ChunkService 相关的打印内容
+sys.stdout = PrintToLogger(chunk_logger, logging.DEBUG)
 
 # Set the global logging level to WARNING to suppress all INFO and DEBUG logs unless explicitly enabled
 logging.getLogger().setLevel(logging.WARNING)
@@ -11,8 +35,11 @@ logging.getLogger().setLevel(logging.WARNING)
 # Ensure all component-specific logging levels are set to WARNING
 logging.getLogger("app.services.load_service").setLevel(logging.WARNING)
 logging.getLogger("app.services.parse_service").setLevel(logging.WARNING)
+logging.getLogger("app.services.chunk_service").setLevel(logging.WARNING)
+logging.getLogger("app.services.embed_service").setLevel(logging.WARNING)
 logging.getLogger("core.config").setLevel(logging.WARNING)
-logging.getLogger("SearchService").setLevel(logging.WARNING)
+logging.getLogger("ChunkService").setLevel(logging.WARNING)
+logging.getLogger("SearchService").setLevel(logging.WARNING)  # Changed from INFO to WARNING to hide search results
 
 # 导入API路由
 from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api, debug

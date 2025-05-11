@@ -15,19 +15,33 @@ index_service = IndexService(
 @router.post("/create")
 async def create_index(
     document_id: str = Body(...),
-    vector_db: str = Body(...),
-    collection_name: str = Body(...),
-    index_name: str = Body(...),
-    embedding_id: str = Body(...),  # Added embedding_id
+    embedding_id: str = Body(...),
+    vector_db: Optional[str] = Body(None),  # Optional, will use default from config if not provided
+    collection_name: Optional[str] = Body(None),  # Optional, will auto-generate if not provided
+    index_name: Optional[str] = Body(None),  # Optional, will auto-generate if not provided
     version: str = Body("1.0")
 ):
     """
     创建向量索引
+    
+    - document_id: 文档ID（必填）
+    - embedding_id: 嵌入ID（必填）
+    - vector_db: 向量数据库类型，默认使用配置中的值
+    - collection_name: 集合名称，默认自动生成
+    - index_name: 索引名称，默认自动生成
+    - version: 索引版本，默认为"1.0"
     """
     print(f"[API LOG /api/index/create] Received: document_id='{document_id}', vector_db='{vector_db}', collection_name='{collection_name}', index_name='{index_name}', embedding_id='{embedding_id}', version='{version}'")
     try:
-        # Pass embedding_id to the service layer
-        result = index_service.create_index(document_id, vector_db, collection_name, index_name, embedding_id, version)
+        # Use defaults from config if parameters are not provided
+        result = index_service.create_index(
+            document_id=document_id,
+            embedding_id=embedding_id,
+            vector_db=vector_db,
+            collection_name=collection_name,
+            index_name=index_name,
+            version=version
+        )
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

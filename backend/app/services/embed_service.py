@@ -15,6 +15,7 @@ import boto3
 
 # Initialize logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Set to INFO to only show important messages
 
 # 新增：嵌入提供商枚举
 class EmbeddingProvider(str, Enum):
@@ -39,7 +40,7 @@ class EmbeddingFactory:
         try:
             # Get logger from module
             _logger = logging.getLogger(__name__)
-            _logger.info(f"Creating embedding function with provider: {config.provider}, model: {config.model_name}")
+            _logger.debug(f"Creating embedding function with provider: {config.provider}, model: {config.model_name}")
             
             if config.provider == EmbeddingProvider.BEDROCK:
                 from langchain_community.embeddings import BedrockEmbeddings
@@ -65,6 +66,11 @@ class EmbeddingFactory:
                     """Custom implementation of Ollama embeddings to avoid pydantic version conflicts"""
                     
                     def __init__(self, model: str, base_url: str = "http://localhost:11434"):
+                        # 修复模型名称格式问题：确保 BGE 模型使用正确的名称格式 (with : instead of -)
+                        if "-latest" in model and "bge" in model.lower() and ":" not in model:
+                            model = model.replace("-latest", ":latest")
+                            _logger.debug(f"Fixed model name format for Ollama BGE model: {model}")
+                        
                         self.model = model
                         self.base_url = base_url
                     
@@ -80,7 +86,8 @@ class EmbeddingFactory:
                         response = requests.post(
                             f"{self.base_url}/api/embeddings",
                             headers={"Content-Type": "application/json"},
-                            json={"model": self.model, "prompt": text}
+                            json={"model": self.model, "prompt": text},
+                            timeout=180  # 增加超时时间以避免嵌入生成超时
                         )
                         if response.status_code != 200:
                             raise ValueError(f"Error from Ollama API: {response.text}")
@@ -150,7 +157,7 @@ class EmbedService:
 
             # 从配置中获取嵌入模型
             if "embedding_models" in config:
-                self.logger.info("Loading embedding models from config file")
+                self.logger.debug("Loading embedding models from config file")
                 return config["embedding_models"]
 
             # 如果配置中没有找到嵌入模型，返回默认值
@@ -189,7 +196,7 @@ class EmbedService:
         """
         为文档创建嵌入向量
         """
-        self.logger.info(f"Creating embeddings for document_id: {document_id} with provider: {provider}, model: {model}")
+        self.logger.debug(f"Creating embeddings for document_id: {document_id} with provider: {provider}, model: {model}")
         
         # 创建嵌入配置与函数
         config = EmbeddingConfig(provider, model)
@@ -205,7 +212,7 @@ class EmbedService:
             self.logger.error(f"Parsed file not found for document ID: {document_id}. Please parse the document first.")
             raise FileNotFoundError(f"请先对文档ID {document_id} 进行解析处理")
         
-        self.logger.info(f"Loading parsed file: {parsed_file}")
+        self.logger.debug(f"Loading parsed file: {parsed_file}")
         with open(parsed_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
@@ -267,7 +274,7 @@ class EmbedService:
                         'metadata': {'type': 'table', 'page': item.get('page')}
                     })
         
-        self.logger.info(f"Extracted {len(text_chunks)} text chunks for embedding")
+        self.logger.debug(f"Extracted {len(text_chunks)} text chunks for embedding")
         
         if not text_chunks:
             self.logger.error("No text chunks found for embedding")
@@ -296,7 +303,7 @@ class EmbedService:
                 for i in range(0, len(text_chunks), BATCH_SIZE):
                     batch = text_chunks[i:i+BATCH_SIZE]
                     texts = [c['content'] for c in batch]
-                    self.logger.info(f"Processing batch {i//BATCH_SIZE + 1} with {len(texts)} chunks")
+                    self.logger.debug(f"Processing batch {i//BATCH_SIZE + 1} with {len(texts)} chunks")
                     
                     vecs = embed_fn.embed_documents(texts)
                     
@@ -350,7 +357,7 @@ class EmbedService:
         with open(result_path, 'w', encoding='utf-8') as f:
             json.dump(embedding_data, f, ensure_ascii=False, cls=self.CompactJSONEncoder)
             
-        self.logger.info(f"Successfully created embeddings for document {document_id}. Result saved to: {result_path}")
+        self.logger.debug(f"Successfully created embeddings for document {document_id}. Result saved to: {result_path}")
         
         # 返回详细的嵌入结果信息
         return {
@@ -368,7 +375,7 @@ class EmbedService:
         """
         列出所有嵌入向量文件
         """
-        self.logger.info(f"Listing embeddings for document_id: {document_id if document_id else 'all'}")
+        self.logger.debug(f"Listing embeddings for document_id: {document_id if document_id else 'all'}")
         results = []
         
         # 确保目录存在
@@ -406,7 +413,7 @@ class EmbedService:
         """
         删除指定ID的嵌入向量文件
         """
-        self.logger.info(f"Deleting embedding with ID: {embedding_id}")
+        self.logger.debug(f"Deleting embedding with ID: {embedding_id}")
         
         # 确保目录存在
         os.makedirs(self.embeddings_dir, exist_ok=True)
@@ -424,7 +431,7 @@ class EmbedService:
                     if data.get('embedding_id') == embedding_id:
                         found = True
                         os.remove(file_path)
-                        self.logger.info(f"Successfully deleted embedding file: {filename}")
+                        self.logger.debug(f"Successfully deleted embedding file: {filename}")
                         return {
                             'status': 'success',
                             'message': f"嵌入 {embedding_id} 已删除",
@@ -451,16 +458,26 @@ class EmbedService:
         返回:
             嵌入向量（浮点数列表）
         """
-        self.logger.info(f"Generating embedding vector for text with provider: {provider}, model: {model}")
+        self.logger.debug(f"Generating embedding vector for text with provider: {provider}, model: {model}")
         
         try:
+            # 修复 Ollama 模型名称格式问题：在文件名中连字符替换了冒号，但API调用需要原始格式
+            # 如果是 Ollama 提供商且模型名称中包含连字符但不包含冒号（可能是处理过的格式）
+            if provider.lower() == "ollama" and "-" in model and ":" not in model:
+                # 检查是否是文件名处理导致的格式问题
+                # 例如：'bge-m3-latest' 应该是 'bge-m3:latest'
+                if model.endswith("-latest") and "bge" in model.lower():
+                    restored_model = model.replace("-latest", ":latest")
+                    self.logger.debug(f"Restored Ollama model name format: '{model}' -> '{restored_model}'")
+                    model = restored_model
+            
             # 创建嵌入配置与函数
             config = EmbeddingConfig(provider, model)
             embed_fn = self.factory.create_embedding_function(config)
             
             # 生成向量
             vector = embed_fn.embed_query(text)
-            self.logger.info(f"Successfully generated vector with dimensions: {len(vector)}")
+            self.logger.debug(f"Successfully generated vector with dimensions: {len(vector)}")
             return vector
         except Exception as e:
             self.logger.error(f"Error generating embedding vector: {str(e)}")

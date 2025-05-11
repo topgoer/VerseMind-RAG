@@ -13,7 +13,7 @@ class SearchService:
                  embeddings_dir=os.path.join("backend", "04-embedded-docs"), 
                  results_dir=os.path.join("backend", "storage", "results")):
         self.logger = logging.getLogger("SearchService")
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.WARNING)  # Changed to WARNING to hide even search results
 
         # 使用绝对路径
         self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
@@ -49,7 +49,7 @@ class SearchService:
         返回:
             包含搜索结果的字典
         """
-        self.logger.info(f"Starting search with index_id={index_id}, query={query}, top_k={top_k}, similarity_threshold={similarity_threshold} (lower threshold increases results)")
+        self.logger.debug(f"Starting search with index_id={index_id}, query={query}, top_k={top_k}, similarity_threshold={similarity_threshold} (lower threshold increases results)")
         
         search_info = {
             "params": {
@@ -66,7 +66,7 @@ class SearchService:
         start_time = datetime.datetime.now()
         
         # 查找索引文件
-        self.logger.info(f"Looking for index file with ID={index_id}")
+        self.logger.debug(f"Looking for index file with ID={index_id}")
         index_file = self._find_index_file(index_id)
         if not index_file:
             error_msg = f"找不到ID为{index_id}的索引"
@@ -97,7 +97,7 @@ class SearchService:
                         parts = doc_id.split("_")
                         if len(parts) >= 3:  # If it has the expected format
                             document_filename = "_".join(parts[:-2])  # Extract everything before timestamp_hash
-                            self.logger.info(f"Extracted document_filename '{document_filename}' from document_id '{doc_id}'")
+                            self.logger.debug(f"Extracted document_filename '{document_filename}' from document_id '{doc_id}'")
                     except Exception as e:
                         self.logger.error(f"Error extracting filename from document_id '{doc_id}': {str(e)}")
             
@@ -105,7 +105,7 @@ class SearchService:
             search_info["vector_db"] = vector_db
             search_info["document_filename"] = document_filename
             
-            self.logger.info(f"Found index for document_id={document_id}, document_filename={document_filename}, vector_db={vector_db}")
+            self.logger.debug(f"Found index for document_id={document_id}, document_filename={document_filename}, vector_db={vector_db}")
         except Exception as e:
             error_msg = f"读取索引文件失败: {str(e)}"
             self.logger.error(error_msg)
@@ -117,10 +117,120 @@ class SearchService:
         search_info["embedding_model"] = embedding_model
         
         # 生成查询向量
-        provider = index_data.get("embedding_model", "").split("-")[0] if index_data.get("embedding_model") else "default"
-        model = index_data.get("embedding_model", "").split("-")[-1] if index_data.get("embedding_model") else "default"
+        # 完全重写模型与提供商解析逻辑，以正确处理不同格式的嵌入模型名称
+        embedding_model_str = index_data.get("embedding_model", "")
+        self.logger.debug(f"Original embedding_model string: '{embedding_model_str}'")
+        
+        # 处理空值情况
+        if not embedding_model_str:
+            provider = "default"
+            model = "default"
+        else:
+            # 显式处理已知格式
+            known_providers = ["openai", "bedrock", "huggingface", "ollama", "deepseek", "baidu", "baai", "default"]
+            
+            try:
+                # 首先检查嵌入文件，这是最可靠的信息源
+                embedding_file_path = self._find_embedding_file(index_data.get("document_id", ""), index_data.get("embedding_id", ""))
+                if embedding_file_path:
+                    self.logger.debug(f"Using embedding file path to detect provider: {embedding_file_path}")
+                    file_name = os.path.basename(embedding_file_path)
+                    
+                    # 从文件名中提取提供商信息
+                    provider_found = False
+                    for p in known_providers:
+                        if f"_{p}_" in file_name:
+                            provider = p
+                            provider_found = True
+                            # 提取模型名称
+                            parts = file_name.split(f"_{p}_", 1)
+                            if len(parts) > 1:
+                                model_part = parts[1]
+                                timestamp_index = model_part.find("_202")
+                                if timestamp_index > 0:
+                                    model = model_part[:timestamp_index]
+                                else:
+                                    model = model_part.split("_embedded.json")[0]
+                            else:
+                                model = embedding_model_str
+                            self.logger.debug(f"Extracted provider='{provider}' and model='{model}' from file name")
+                            break
+                            
+                    # 如果找到了文件但没找到提供商，尝试从嵌入文件内容中获取
+                    if not provider_found:
+                        try:
+                            with open(embedding_file_path, "r", encoding="utf-8") as f:
+                                embed_data = json.load(f)
+                                if "provider" in embed_data:
+                                    provider = embed_data["provider"]
+                                    if "model" in embed_data:
+                                        model = embed_data["model"]
+                                    self.logger.debug(f"Extracted provider='{provider}' and model='{model}' from embedding file content")
+                                    provider_found = True
+                        except Exception as e:
+                            self.logger.error(f"Error reading embedding file content: {str(e)}")
+                
+                # 如果通过文件路径和内容未找到提供商，尝试通过模型名称推断
+                if 'provider' not in locals() or not provider:
+                    # 导入嵌入服务以获取可用模型列表
+                    from app.services.embed_service import EmbedService
+                    embed_service = EmbedService()
+                    
+                    # 获取所有支持的嵌入模型
+                    try:
+                        models_info = embed_service.get_embedding_models()
+                        if "providers" in models_info:
+                            # 特殊处理 BGE 模型（直接分配给 ollama 提供商）
+                            if embedding_model_str.startswith("bge-"):
+                                provider = "ollama"
+                                model = embedding_model_str
+                                self.logger.debug(f"Special handling: BGE model '{model}' assigned to provider '{provider}'")
+                            else:
+                                # 在所有提供商的模型列表中查找匹配的模型名称
+                                for provider_name, provider_models in models_info["providers"].items():
+                                    for model_info in provider_models:
+                                        if model_info.get("id") == embedding_model_str:
+                                            provider = provider_name
+                                            model = embedding_model_str
+                                            self.logger.debug(f"Found model '{model}' in provider '{provider}' model list")
+                                            break
+                                    if 'provider' in locals() and provider:
+                                        break
+                    except Exception as e:
+                        self.logger.error(f"Error getting embedding models: {str(e)}")
+                
+                # 如果仍然没有提供商信息，尝试从模型名称前缀推断
+                if 'provider' not in locals() or not provider:
+                    # 检查是否是 {provider}-* 格式
+                    for p in known_providers:
+                        if embedding_model_str.startswith(f"{p}-"):
+                            provider = p
+                            model = embedding_model_str[len(f"{p}-"):]
+                            self.logger.debug(f"Extracted provider='{provider}' from model name prefix")
+                            break
+                    
+                    # 特殊处理bge模型 - 显式检查是否是 "bge-" 开头的模型
+                    if ('provider' not in locals() or not provider) and embedding_model_str.startswith("bge-"):
+                        provider = "ollama"  # 显式为 bge 模型指定 ollama 提供商
+                        model = embedding_model_str
+                        self.logger.debug(f"Special handling for BGE model: Using provider='{provider}' with model='{model}'")
+                    # 如果没有找到匹配的提供商，使用默认提供商
+                    elif 'provider' not in locals() or not provider:
+                        # 尝试判断是否是类似 "bge-m3:latest" 这样的本地模型名称
+                        if ":" in embedding_model_str:
+                            provider = "ollama"  # 对于带冒号的格式，通常是本地模型
+                        else:
+                            provider = "default"
+                        model = embedding_model_str
+                        self.logger.debug(f"No provider identified. Using provider='{provider}' with model='{model}'")
+            except Exception as e:
+                self.logger.error(f"Error during provider/model extraction: {str(e)}")
+                provider = "default"
+                model = embedding_model_str
+                        
         
         vector_start_time = datetime.datetime.now()
+        self.logger.debug(f"Using provider='{provider}' and model='{model}' for query vector generation")
         query_vector = self._generate_query_vector(query, provider, model)
         vector_time = datetime.datetime.now() - vector_start_time
         
@@ -128,7 +238,7 @@ class SearchService:
         search_info["vector_dimensions"] = len(query_vector)
         
         # 执行向量搜索
-        self.logger.info(f"Performing vector search with {len(query_vector)}-dimensional query vector")
+        self.logger.debug(f"Performing vector search with {len(query_vector)}-dimensional query vector")
         
         search_start_time = datetime.datetime.now()
         search_results = self._vector_search_from_index(query_vector, index_data, top_k, similarity_threshold, min_chars)
@@ -153,7 +263,7 @@ class SearchService:
         
         # 构建搜索结果
         document_filename = search_info.get("document_filename", "")
-        self.logger.info(f"Initial document_filename: {document_filename}, document_id: {document_id}")
+        self.logger.debug(f"Initial document_filename: {document_filename}, document_id: {document_id}")
         
         # If no document_filename was found, try more advanced extraction methods
         if not document_filename and document_id:
@@ -171,7 +281,7 @@ class SearchService:
                             # 这可能是一个时间戳，使用之前的所有部分作为文件名
                             clean_name = '_'.join(parts[:-2])
                             document_filename = clean_name
-                            self.logger.info(f"Extracted document name from ID: {document_filename}")
+                            self.logger.debug(f"Extracted document name from ID: {document_filename}")
             except Exception as e:
                 self.logger.error(f"Error extracting name from document_id: {str(e)}")
                 
@@ -188,7 +298,7 @@ class SearchService:
                                     if filename:
                                         document_filename = filename
                                         search_info["document_filename"] = document_filename
-                                        self.logger.info(f"Successfully extracted filename: {filename} from source path")
+                                        self.logger.debug(f"Successfully extracted filename: {filename} from source path")
                                         break
                                 except Exception as inner_e:
                                     self.logger.error(f"Error extracting basename from path {source_path}: {str(inner_e)}")
@@ -212,7 +322,7 @@ class SearchService:
                         parts[-2].isdigit() and len(parts[-2]) == 6 and
                         len(parts[-1]) >= 6):  # 最后一部分可能是哈希值
                         document_filename = '_'.join(parts[:-3])
-                        self.logger.info(f"Cleaned document_filename to: {document_filename}")
+                        self.logger.debug(f"Cleaned document_filename to: {document_filename}")
                 except:
                     pass
         
@@ -237,7 +347,7 @@ class SearchService:
                 document_filename = f"文档: {document_filename}"
         
         # Final filename for logging
-        self.logger.info(f"Final document_filename: '{document_filename}'")
+        self.logger.debug(f"Final document_filename: '{document_filename}'")
             
         result = {
             "search_id": search_id,
@@ -263,7 +373,7 @@ class SearchService:
         try:
             with open(result_path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
-            self.logger.info(f"Saved search results to {result_path}")
+            self.logger.debug(f"Saved search results to {result_path}")
         except Exception as e:
             self.logger.error(f"Error saving search results: {str(e)}")
         
@@ -273,24 +383,24 @@ class SearchService:
         # 打印搜索结果摘要
         if search_results:
             similarities = [f"{r['similarity']:.4f}" for r in search_results]
-            self.logger.info(f"Found {len(search_results)} results with similarities: {similarities}")
+            self.logger.debug(f"Found {len(search_results)} results with similarities: {similarities}")
         else:
-            self.logger.info("No results found matching the criteria")
+            self.logger.debug("No results found matching the criteria")
             
         return result
     
     def _find_index_file(self, index_id: str) -> Optional[str]:
         """查找指定ID的索引文件"""
-        self.logger.info(f"Searching for index file with index_id='{index_id}'")
+        self.logger.debug(f"Searching for index file with index_id='{index_id}'")
         
         # 只在主索引目录中查找
         possible_dirs = [self.indices_dir]
         
         # 打印搜索目录列表
-        self.logger.info(f"Will search in directory: {self.indices_dir}")
+        self.logger.debug(f"Will search in directory: {self.indices_dir}")
             
         for dir_path in possible_dirs:
-            self.logger.info(f"Checking directory: {dir_path}")
+            self.logger.debug(f"Checking directory: {dir_path}")
             
             if os.path.exists(dir_path):
                 for filename in os.listdir(dir_path):
@@ -303,42 +413,42 @@ class SearchService:
                             # Check if the index_id inside the JSON matches the target index_id
                             internal_index_id = index_data.get("index_id")
                             if internal_index_id == index_id:
-                                self.logger.info(f"Match found: File '{filename}' contains index_id='{index_id}'")
+                                self.logger.debug(f"Match found: File '{filename}' contains index_id='{index_id}'")
                                 return file_path
                                 
                             # 如果文件名中包含索引ID（备用策略）
                             if index_id in filename:
-                                self.logger.info(f"Match found by filename: '{filename}' contains index_id='{index_id}'")
+                                self.logger.debug(f"Match found by filename: '{filename}' contains index_id='{index_id}'")
                                 return file_path
                         except json.JSONDecodeError:
                             self.logger.error(f"Could not decode JSON from file: '{filename}'")
                         except Exception as e:
                             self.logger.error(f"Error reading file '{filename}': {str(e)}")
                 
-                self.logger.info(f"No index file with index_id='{index_id}' found in {dir_path}")
+                self.logger.debug(f"No index file with index_id='{index_id}' found in {dir_path}")
             else:
-                self.logger.info(f"Indices directory '{dir_path}' does not exist")
+                self.logger.debug(f"Indices directory '{dir_path}' does not exist")
                 
         return None
     
     def _find_embedding_file(self, document_id: str, embedding_id: str = None) -> Optional[str]:
         """查找指定文档的嵌入文件"""
-        self.logger.info(f"Searching for embedding file with document_id='{document_id}' and embedding_id='{embedding_id}'")
+        self.logger.debug(f"Searching for embedding file with document_id='{document_id}' and embedding_id='{embedding_id}'")
         
         # 只在主嵌入目录中查找
         possible_dirs = [self.embeddings_dir]
         
         # 打印搜索目录列表
-        self.logger.info(f"Will search in directory: {self.embeddings_dir}")
+        self.logger.debug(f"Will search in directory: {self.embeddings_dir}")
             
         for dir_path in possible_dirs:
-            self.logger.info(f"Checking directory: '{dir_path}'")
+            self.logger.debug(f"Checking directory: '{dir_path}'")
             if os.path.exists(dir_path):
-                self.logger.info(f"Directory '{dir_path}' exists. Listing files...")
+                self.logger.debug(f"Directory '{dir_path}' exists. Listing files...")
                 for filename in os.listdir(dir_path):
                     # 放宽搜索条件，只要包含document_id和.json后缀即可
                     if document_id in filename and filename.endswith(".json"):
-                        self.logger.info(f"Found potential file: '{filename}'")
+                        self.logger.debug(f"Found potential file: '{filename}'")
                         file_path = os.path.join(dir_path, filename)
                         
                         try:
@@ -347,30 +457,30 @@ class SearchService:
                                 data = json.load(f)
                             
                             # 打印文件的键，便于调试
-                            self.logger.info(f"File '{filename}' contains keys: {list(data.keys())}")
+                            self.logger.debug(f"File '{filename}' contains keys: {list(data.keys())}")
                                 
                             # 如果指定了embedding_id，检查是否匹配
                             internal_embedding_id = data.get("embedding_id")
                             if embedding_id and internal_embedding_id and internal_embedding_id != embedding_id:
-                                self.logger.info(f"File '{filename}' has embedding_id='{internal_embedding_id}' which doesn't match target '{embedding_id}'")
+                                self.logger.debug(f"File '{filename}' has embedding_id='{internal_embedding_id}' which doesn't match target '{embedding_id}'")
                                 continue
                             
                             # 检查多种可能的键名
                             if "embeddings" in data:
-                                self.logger.info(f"Match found: File '{filename}' contains 'embeddings' key")
+                                self.logger.debug(f"Match found: File '{filename}' contains 'embeddings' key")
                                 return file_path
                                 
                             if "vectors" in data:
-                                self.logger.info(f"Match found: File '{filename}' contains 'vectors' key")
+                                self.logger.debug(f"Match found: File '{filename}' contains 'vectors' key")
                                 return file_path
                                 
                             if "vector" in data:
-                                self.logger.info(f"Match found: File '{filename}' contains 'vector' key")
+                                self.logger.debug(f"Match found: File '{filename}' contains 'vector' key")
                                 return file_path
                                 
                             # 如果文件名中包含"embedded"或"embedding"，很可能是嵌入文件
                             if "embedded" in filename or "embedding" in filename:
-                                self.logger.info(f"Match found by filename pattern: '{filename}'")
+                                self.logger.debug(f"Match found by filename pattern: '{filename}'")
                                 return file_path
                                 
                         except json.JSONDecodeError:
@@ -378,8 +488,181 @@ class SearchService:
                         except Exception as e:
                             self.logger.error(f"Error reading file '{filename}': {str(e)}")
                 
-                self.logger.info(f"No matching embedding file found in '{dir_path}'")
+                self.logger.debug(f"No matching embedding file found in '{dir_path}'")
             else:
-                self.logger.info(f"Embeddings directory '{dir_path}' does not exist")
+                self.logger.debug(f"Embeddings directory '{dir_path}' does not exist")
                 
         return None
+
+    def _generate_query_vector(self, query: str, provider: str, model: str) -> List[float]:
+        """
+        生成查询向量
+        
+        参数:
+            query: 查询文本
+            provider: 嵌入向量的提供商 (openai, bedrock, ollama等)
+            model: 嵌入向量的模型
+            
+        返回:
+            查询向量 (浮点数列表)
+        """
+        # 额外处理特殊情况：BGE模型
+        if "bge" in model.lower() and provider != "ollama":
+            self.logger.debug(f"Converting BGE model provider from '{provider}' to 'ollama'")
+            provider = "ollama"
+        
+        self.logger.debug(f"Generating query vector with provider={provider}, model={model}")
+        
+        try:
+            # 导入嵌入服务
+            from app.services.embed_service import EmbedService
+            embed_service = EmbedService()
+            
+            # 使用嵌入服务生成查询向量
+            vector = embed_service.generate_embedding_vector(query, provider, model)
+            self.logger.debug(f"Generated query vector with dimensions: {len(vector)}")
+            return vector
+        except Exception as e:
+            self.logger.error(f"Error generating query vector: {str(e)}")
+            
+            # 尝试恢复方案：如果是BGE模型但provider不正确，尝试使用ollama提供商重试
+            if "bge" in model.lower() and provider != "ollama":
+                self.logger.debug(f"Retrying with provider 'ollama' for BGE model")
+                try:
+                    from app.services.embed_service import EmbedService
+                    embed_service = EmbedService()
+                    vector = embed_service.generate_embedding_vector(query, "ollama", model)
+                    self.logger.debug(f"Successfully generated vector with ollama provider, dimensions: {len(vector)}")
+                    return vector
+                except Exception as retry_e:
+                    self.logger.error(f"Retry also failed: {str(retry_e)}")
+            
+            # 如果生成失败，返回一个随机向量
+            self.logger.warning("Falling back to random vector for query")
+            import numpy as np
+            
+            # 基于常用模型推断向量维度
+            dimensions = 384  # 默认维度
+            if provider == "openai":
+                dimensions = 1536
+            elif "bge" in model.lower():
+                dimensions = 1024
+                
+            # 使用更新的numpy随机生成器API
+            rng = np.random.Generator(np.random.PCG64(42))  # 固定种子以便调试
+            vector = rng.standard_normal(dimensions)
+            vector = vector / np.linalg.norm(vector)  # 归一化
+            
+            return vector.tolist()
+
+    def _cosine_similarity(self, v1: List[float], v2: List[float]) -> float:
+        """
+        计算两个向量之间的余弦相似度
+        
+        参数:
+            v1: 第一个向量
+            v2: 第二个向量
+            
+        返回:
+            余弦相似度值 (-1到1之间)
+        """
+        try:
+            import numpy as np
+            
+            # 转换为numpy数组
+            a = np.array(v1)
+            b = np.array(v2)
+            
+            # 计算余弦相似度
+            norm_a = np.linalg.norm(a)
+            norm_b = np.linalg.norm(b)
+            
+            # 避免除以零
+            if norm_a == 0 or norm_b == 0:
+                return 0
+                
+            similarity = np.dot(a, b) / (norm_a * norm_b)
+            
+            # 确保结果在有效范围内
+            return float(max(min(similarity, 1.0), -1.0))
+        except Exception as e:
+            self.logger.error(f"Error calculating cosine similarity: {str(e)}")
+            return 0.0
+            
+    def _vector_search_from_index(self, query_vector: List[float], index_data: Dict[str, Any], 
+                                 top_k: int = 3, similarity_threshold: float = 0.5,
+                                 min_chars: int = 100) -> List[Dict[str, Any]]:
+        """
+        从索引中进行向量搜索
+        
+        参数:
+            query_vector: 查询向量
+            index_data: 索引数据
+            top_k: 返回结果数量
+            similarity_threshold: 相似度阈值
+            min_chars: 最小字符数
+            
+        返回:
+            包含搜索结果的列表
+        """
+        self.logger.debug(f"Performing vector search with threshold={similarity_threshold}, top_k={top_k}")
+        
+        try:
+            # 从索引获取文档ID和嵌入向量ID
+            document_id = index_data.get("document_id", "")
+            embedding_id = index_data.get("embedding_id", "")
+            
+            # 查找嵌入文件
+            embedding_file = self._find_embedding_file(document_id, embedding_id)
+            if not embedding_file:
+                self.logger.error(f"Embedding file not found for document ID: {document_id}")
+                raise FileNotFoundError(f"找不到文档 {document_id} 的嵌入向量文件")
+            
+            # 加载嵌入数据
+            with open(embedding_file, "r", encoding="utf-8") as f:
+                embedding_data = json.load(f)
+            
+            # 获取嵌入向量列表
+            embeddings = embedding_data.get("embeddings", [])
+            if not embeddings:
+                self.logger.error(f"No embeddings found in file: {embedding_file}")
+                return []
+            
+            self.logger.debug(f"Loaded {len(embeddings)} embeddings from {embedding_file}")
+            
+            # 计算相似度并排序
+            results = []
+            for item in embeddings:
+                vector = item.get("vector", [])
+                if not vector or len(vector) != len(query_vector):
+                    continue
+                
+                # 计算相似度
+                similarity = self._cosine_similarity(query_vector, vector)
+                
+                # 文本内容
+                text = item.get("text", "")
+                if "text" not in item and "content" in item:
+                    text = item.get("content", "")
+                    
+                # 元数据
+                metadata = item.get("metadata", {})
+                    
+                # 如果相似度超过阈值且文本长度超过最小值, 添加到结果列表
+                if similarity >= similarity_threshold and len(text) >= min_chars:
+                    results.append({
+                        "text": text,
+                        "similarity": similarity,
+                        "metadata": metadata
+                    })
+            
+            # 按相似度降序排序并选取top_k个结果
+            results.sort(key=lambda x: x["similarity"], reverse=True)
+            results = results[:top_k]
+            
+            self.logger.debug(f"Found {len(results)} results after filtering by threshold and length")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in vector search: {str(e)}")
+            raise ValueError(f"向量搜索失败: {str(e)}")

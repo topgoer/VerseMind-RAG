@@ -160,7 +160,7 @@ class GenerateService:
                 f"{self.ollama_base_url}/api/generate",
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=180  # 增加超时时间以避免大模型生成超时
             )
             
             if response.status_code != 200:

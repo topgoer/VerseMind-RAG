@@ -6,6 +6,7 @@ import numpy as np
 from typing import Dict, List, Any, Optional
 from enum import Enum
 from pymilvus import connections, utility, Collection, DataType, FieldSchema, CollectionSchema
+from app.core.config import settings
 
 class VectorDBProvider(str, Enum):
     FAISS = "faiss"
@@ -14,16 +15,39 @@ class VectorDBProvider(str, Enum):
 
 class VectorDBConfig:
     """
-    Configuration for Milvus vector database
+    Configuration for vector databases
     """
-    def __init__(self, index_mode: str):
-        self.provider = VectorDBProvider.MILVUS.value
+    def __init__(self, provider: str, index_mode: str):
+        self.provider = provider
         self.index_mode = index_mode
-        self.milvus_uri = os.getenv("MILVUS_URI", "127.0.0.1:19530")
+        # FAISS specific settings
+        if provider == VectorDBProvider.FAISS.value:
+            self.index_type = settings.FAISS_INDEX_TYPE
+            self.metric = settings.FAISS_METRIC
+        # Chroma specific settings
+        elif provider == VectorDBProvider.CHROMA.value:
+            self.collection_name = settings.CHROMA_COLLECTION_NAME
+            self.distance_function = settings.CHROMA_DISTANCE_FUNCTION
+        # Milvus specific settings
+        elif provider == VectorDBProvider.MILVUS.value:
+            self.milvus_uri = os.getenv("MILVUS_URI", "127.0.0.1:19530")
+        
+        # Common settings
+        self.persist_directory = settings.VECTOR_STORE_PERSIST_DIR
 
     def get_index_params(self):
-        # default params, could extend via env or config file
-        return {"metric_type": "COSINE"}
+        """Get index parameters based on vector DB provider"""
+        if self.provider == VectorDBProvider.MILVUS.value:
+            return {"metric_type": "COSINE"}
+        elif self.provider == VectorDBProvider.FAISS.value:
+            metric_map = {
+                "cosine": "METRIC_INNER_PRODUCT",
+                "l2": "METRIC_L2",
+                "ip": "METRIC_INNER_PRODUCT"
+            }
+            return {"metric_type": metric_map.get(self.metric, "METRIC_INNER_PRODUCT")}
+        elif self.provider == VectorDBProvider.CHROMA.value:
+            return {"distance_function": self.distance_function}
 
 class IndexService:
     """向量索引服务，支持FAISS和Chroma向量数据库"""
@@ -33,26 +57,42 @@ class IndexService:
         self.indices_dir = indices_dir
         os.makedirs(indices_dir, exist_ok=True)
     
-    def create_index(self, document_id: str, vector_db: str, collection_name: str, index_name: str, embedding_id: str, version: str = "1.0") -> Dict[str, Any]:
+    def create_index(self, document_id: str, vector_db: str = None, collection_name: str = None, index_name: str = None, embedding_id: str = None, version: str = "1.0") -> Dict[str, Any]:
         """
         创建向量索引
         
         参数:
             document_id: 文档ID
-            vector_db: 向量数据库类型 ("faiss", "chroma", "milvus")
-            collection_name: 集合名称
-            index_name: 索引名称
-            embedding_id: 嵌入ID (用于查找对应的嵌入文件)
+            vector_db: 向量数据库类型 ("faiss", "chroma", "milvus")，如果为None则使用配置文件中的默认值
+            collection_name: 集合名称，如果为None则自动生成
+            index_name: 索引名称，如果为None则自动生成
+            embedding_id: 嵌入ID (用于查找对应的嵌入文件)，如果为None则使用最新的嵌入
             version: 索引版本
         
         返回:
             包含索引结果的字典
         """
+        # 使用配置中的默认向量数据库类型，如果未指定
+        if vector_db is None:
+            vector_db = settings.VECTOR_STORE_TYPE
+        
+        # 如果未指定嵌入ID，则尝试查找最新的嵌入
+        if embedding_id is None:
+            # 这里应实现查找最新嵌入的逻辑
+            # 目前暂不实现此功能，抛出错误
+            raise ValueError("必须指定嵌入ID")
+        
+        # 如果未指定集合名称或索引名称，则自动生成
+        if collection_name is None:
+            collection_name = f"col_{document_id[:10]}"
+        if index_name is None:
+            index_name = f"idx_{embedding_id[:8]}"
+        
         print(f"[SERVICE LOG IndexService.create_index] Called with: document_id='{document_id}', vector_db='{vector_db}', collection_name='{collection_name}', index_name='{index_name}', embedding_id='{embedding_id}', version='{version}'")
+        
         # 检查嵌入是否存在
-        embedding_file = self._find_embedding_file(document_id, embedding_id) # Pass embedding_id
+        embedding_file = self._find_embedding_file(document_id, embedding_id)
         if not embedding_file:
-            # Updated error message to include embedding_id
             error_message = f"请先为文档ID {document_id} (使用嵌入ID: {embedding_id}) 创建嵌入向量"
             print(f"[SERVICE ERROR IndexService.create_index] {error_message}")
             raise FileNotFoundError(error_message)
@@ -78,7 +118,7 @@ class IndexService:
             index_info = self._create_chroma_index(embeddings, collection_name, index_name)
         elif vector_db == VectorDBProvider.MILVUS.value:
             # use Milvus for index
-            config = VectorDBConfig(index_mode=index_name)
+            config = VectorDBConfig(provider=VectorDBProvider.MILVUS.value, index_mode=index_name)
             milvus_result = self._index_to_milvus(embeddings, collection_name, config)
             index_info = milvus_result  # contains collection_name and index_size
         else:
@@ -288,49 +328,64 @@ class IndexService:
     def _create_faiss_index(self, embeddings: List[Dict[str, Any]], collection_name: str, index_name: str) -> Dict[str, Any]:
         """创建FAISS索引"""
         try:
-            # 在实际实现中，这里会使用FAISS库创建索引
-            # 这里使用模拟数据
+            # 获取FAISS配置
+            vector_db_config = VectorDBConfig(provider=VectorDBProvider.FAISS.value, index_mode=index_name)
             
             # 提取向量和ID
             vectors = [emb.get("vector", []) for emb in embeddings]
+            # 保存IDs以备后续使用，目前未实现
             ids = [emb.get("id", "") for emb in embeddings]
             
-            # 模拟索引信息
+            # 配置索引路径
+            index_path = os.path.join(vector_db_config.persist_directory, f"{collection_name}_{index_name}.faiss")
+            os.makedirs(os.path.dirname(index_path), exist_ok=True)
+            
+            # 索引信息
             index_info = {
                 "type": "faiss",
-                "index_type": "IndexFlatL2",  # 或者 "IndexIVFFlat", "IndexHNSW" 等
+                "index_type": vector_db_config.index_type,  # 使用配置中的索引类型
+                "metric": vector_db_config.metric,          # 使用配置中的度量方法
                 "dimensions": len(vectors[0]) if vectors else 0,
                 "num_vectors": len(vectors),
-                "index_path": f"storage/indices/{collection_name}_{index_name}.faiss"
+                "index_path": index_path
             }
             
             return index_info
         except Exception as e:
-            raise Exception(f"FAISS索引创建失败: {str(e)}")
+            # 应该使用更具体的异常类型，但为保持兼容性先维持现状
+            raise ValueError(f"FAISS索引创建失败: {str(e)}")
     
     def _create_chroma_index(self, embeddings: List[Dict[str, Any]], collection_name: str, index_name: str) -> Dict[str, Any]:
         """创建Chroma索引"""
         try:
-            # 在实际实现中，这里会使用Chroma库创建索引
-            # 这里使用模拟数据
+            # 获取Chroma配置
+            vector_db_config = VectorDBConfig(provider=VectorDBProvider.CHROMA.value, index_mode=index_name)
             
             # 提取向量、ID和文本
             vectors = [emb.get("vector", []) for emb in embeddings]
-            ids = [emb.get("id", "") for emb in embeddings]
-            texts = [emb.get("text", "") for emb in embeddings]
+            # 这些变量目前未使用，保留以备后续实现
+            # 实际实现时可能需要使用
+            _ = [emb.get("id", "") for emb in embeddings]
+            _ = [emb.get("text", "") for emb in embeddings]
             
-            # 模拟索引信息
+            # 配置索引路径
+            index_path = os.path.join(vector_db_config.persist_directory, f"{collection_name}_{index_name}")
+            os.makedirs(index_path, exist_ok=True)
+            
+            # 索引信息
             index_info = {
                 "type": "chroma",
-                "collection_name": collection_name,
+                "collection_name": collection_name if collection_name else vector_db_config.collection_name,
+                "distance_function": vector_db_config.distance_function,
                 "dimensions": len(vectors[0]) if vectors else 0,
                 "num_vectors": len(vectors),
-                "index_path": f"storage/indices/{collection_name}_{index_name}"
+                "index_path": index_path
             }
             
             return index_info
         except Exception as e:
-            raise Exception(f"Chroma索引创建失败: {str(e)}")
+            # 应该使用更具体的异常类型，但为保持兼容性先维持现状
+            raise ValueError(f"Chroma索引创建失败: {str(e)}")
     
     def _index_to_milvus(self, embeddings: List[Dict[str, Any]], collection_name: str, config: VectorDBConfig) -> Dict[str, Any]:
         """
@@ -353,6 +408,14 @@ class IndexService:
             # create index
             collection.create_index(field_name="vector", index_params=config.get_index_params())
             collection.load()
-            return {"collection_name": collection_name, "index_size": len(insert_result.primary_keys)}
+            return {
+                "type": "milvus",
+                "collection_name": collection_name,
+                "dimensions": dim,
+                "num_vectors": len(vectors),
+                "index_size": len(insert_result.primary_keys)
+            }
+        except Exception as e:
+            raise ValueError(f"Milvus索引创建失败: {str(e)}")
         finally:
             connections.disconnect("default")

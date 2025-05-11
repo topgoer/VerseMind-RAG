@@ -1,4 +1,4 @@
-# 忽略临时和本地配置文件
+# Ignore temporary and local configuration files
 Temp/
 *.pyc
 __pycache__/
@@ -7,5 +7,67 @@ __pycache__/
 *.bak
 node_modules/
 dist/
+# Storage directories - no files should be committed
 storage/
+storage/**/*
+backend/storage/
+backend/storage/**/*
+D:\Github\VerseMind-RAG\storage\
+D:\Github\VerseMind-RAG\storage\**\*
+D:\Github\VerseMind-RAG\backend\storage\
+D:\Github\VerseMind-RAG\backend\storage\**\*
 config/config.toml
+
+# Python test scripts
+simple_test.py
+simple_test_logs.py
+test_*.py
+test_output.log
+*_test.py
+
+# Backend generated files
+backend/01-loaded_docs/
+backend/02-chunked-docs/
+backend/03-parsed-docs/
+backend/04-embedded-docs/
+
+# Config temporary files
+config/*.new
+
+# GitHub CI/CD specific ignores
+.github/workflows/.cache/
+.pytest_cache/
+coverage/
+*.log
+test_output.log
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+*.egg-info/
+*.egg
+
+# Test artifacts
+.coverage
+htmlcov/
+
+# Database files
+*.sqlite
+*.db
+
+# Embeddings and index files (to be generated during deployment)
+backend/04-embedded-docs/
+backend/04-embedded-docs/**/*
+backend/storage/
+backend/storage/**/*

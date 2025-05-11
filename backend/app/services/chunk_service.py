@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 from langchain.text_splitter import RecursiveCharacterTextSplitter  # added langchain splitter import
 import re  # Added re for _chunk_by_langchain_recursive
 import html  # Added for unescaping HTML entities in PDF extraction
+import logging
 
 # Import ParseService for automatic document parsing after chunking
 from app.services.parse_service import ParseService
@@ -15,6 +16,9 @@ class ChunkService:
     """文档分块服务，支持按字数、段落、标题等策略进行切分"""
     
     def __init__(self, documents_dir="01-loaded_docs", chunks_dir="02-chunked-docs"):  # Keep using the original directory structure
+        self.logger = logging.getLogger("ChunkService")
+        self.logger.setLevel(logging.WARNING)  # Only show warnings and errors by default
+        
         self.documents_dir = documents_dir
         self.chunks_dir = chunks_dir
         os.makedirs(self.documents_dir, exist_ok=True)  # Ensure documents_dir also exists

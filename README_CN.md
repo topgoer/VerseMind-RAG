@@ -17,7 +17,7 @@ VerseMind-RAG 是一个文档智能与语义生成系统，提供完整的 RAG�
 
 - **前端**：React + Vite + TailwindCSS
 - **后端**：FastAPI + Python
-- **存储**：文件系统 + FAISS/Chroma 向量库
+- **存储**：文件系统 + FAISS/Chroma 向量数据库
 - **模型**：Ollama（本地）+ DeepSeek/OpenAI API
 
 ## 快速开始
@@ -122,6 +122,38 @@ VerseMind-RAG 是一个文档智能与语义生成系统，提供完整的 RAG�
 - 前后端统一模型选择
 - 运行时自动检测模型
 - 配置文件：`config/config.toml`
+
+### 向量数据库优化
+
+VerseMind-RAG 支持多种向量数据库后端来存储和检索文档嵌入：
+
+- **FAISS**：针对高性能向量相似度搜索进行优化
+  - 适用于大规模数据集（百万级向量）
+  - 多种索引类型（Flat、HNSW32、HNSW64）
+  - 多种距离度量方式（余弦相似度、L2、内积）
+
+- **Chroma**：具有丰富元数据筛选功能的向量数据库
+  - 强大的元数据过滤能力
+  - 易用的 API 和简单的配置
+  - 适用于复杂的文档检索需求
+
+配置通过 `config/config.toml` 文件进行管理，结构如下：
+
+```toml
+[vector_store]
+type = "faiss"  # 选项: "faiss", "chroma"
+persist_directory = "./storage/vector_db"
+
+[vector_store.faiss]
+index_type = "HNSW32"  # 选项: "Flat", "HNSW32", "HNSW64"
+metric = "cosine"      # 选项: "cosine", "l2", "ip"
+
+[vector_store.chroma]
+collection_name = "versemind_docs"
+distance_function = "cosine"  # 选项: "cosine", "l2", "ip"
+```
+
+有关索引类型、距离度量和性能调优的详细配置选项，请参阅[用户指南](./Temp/user_guide.md#向量数据库配置)。
 
 ### 环境变量说明
 
