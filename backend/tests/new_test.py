@@ -12,10 +12,35 @@ from app.services.chunk_service import ChunkService
 
 def create_mock_upload_file(filename, content=b""):
     """Create a mock upload file for testing"""
-    return {
-        "filename": filename,
-        "file": BytesIO(content)
-    }
+    # Create a proper mock object with the necessary attributes
+    class MockUploadFile:
+        def __init__(self, filename, file_content=b""):
+            self.filename = filename
+            # If filename is a real file path, read its content
+            if os.path.exists(filename) and os.path.isfile(filename):
+                try:
+                    with open(filename, "rb") as f:
+                        file_content = f.read()
+                except Exception as e:
+                    print(f"Warning: Could not read file {filename}: {str(e)}")
+                    # Use empty content as fallback
+                    file_content = b""
+            
+            self.file = BytesIO(file_content)
+            self.size = len(file_content)
+            
+        async def read(self):
+            self.file.seek(0)
+            return self.file.read()
+            
+        async def seek(self, offset):
+            self.file.seek(offset)
+            return self.file.tell()
+            
+        async def close(self):
+            pass
+    
+    return MockUploadFile(filename, content)
 
 @pytest.mark.asyncio
 async def test_pdf_extraction_edge_cases_improved(document_cleanup):
