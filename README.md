@@ -239,101 +239,14 @@ For detailed configuration options, please refer to the configuration example fi
 
 ## How to Use VerseMind-RAG
 
-VerseMind-RAG provides a complete document processing and retrieval pipeline. Here's a quick guide to using the system:
+VerseMind-RAG provides a complete document processing and retrieval pipeline:
 
-### Document Processing Workflow
+1. **Upload Documents** via the UI
+2. **Process Documents** (chunking, parsing, embedding, indexing)
+3. **Query Documents** through the Chat interface
+4. **View Results** with source references and visualizations
 
-1. **Upload Documents**: 
-   - Navigate to the Documents tab in the UI
-   - Click "Upload Document" and select your files (PDF, DOCX, TXT, etc.)
-   - Your documents will be loaded into the system
-
-2. **Document Processing**:
-   - The system automatically processes your documents through the pipeline:
-     - **Chunking**: Breaking documents into manageable pieces
-     - **Parsing**: Extracting structured content and metadata
-     - **Embedding**: Converting text into vector representations
-     - **Indexing**: Storing vectors for efficient retrieval
-
-3. **Querying Documents**:
-   - Navigate to the Chat tab
-   - Type your query in the input field
-   - The system will:
-     - Search for relevant information from your documents
-     - Retrieve the most semantically similar content
-     - Generate comprehensive answers based on the retrieved content
-
-4. **Viewing Results**:
-   - See both the generated answer and the source documents
-   - Access the specific passages that informed the response
-   - Explore document relationships through the interactive visualizations
-
-### Tips for Better Results
-
-- **Ask specific questions** for more precise answers
-- **Upload high-quality documents** with clear text (OCR quality affects results)
-- **Try different models** for embedding and generation to compare results
-- **Use local models** via Ollama for privacy and offline capability
-- **Adjust chunk size** in config.toml for different document types
-
-### Sample Queries
-
-- "Summarize the key points about RAG evaluation metrics"
-- "What are the challenges in implementing retrieval-augmented generation?"
-- "Compare and contrast different chunking strategies for RAG systems"
-
-## Troubleshooting
-
-### Common Issues and Solutions
-
-#### Backend Issues
-
-1. **PDF Parsing Errors**
-   - **Issue**: Error messages when uploading PDF files
-   - **Solution**: 
-     - Ensure the PDF is not password protected
-     - Run the cleanup script: `python backend/scripts/simple_cleanup.py`
-     - Verify you have the required dependencies: `pip install pymupdf pdfplumber reportlab`
-
-2. **Model Connection Issues**
-   - **Issue**: "Failed to connect to model provider" errors
-   - **Solution**:
-     - For Ollama: Ensure Ollama service is running (`ollama serve`)
-     - For API-based models: Verify your API keys in config.toml
-     - Check your network connection and firewall settings
-
-3. **Storage Space Issues**
-   - **Issue**: System becomes slow or fails due to excessive temp files
-   - **Solution**:
-     - Run cleanup scripts periodically: `python backend/scripts/clean_storage_docs.py`
-     - Consider setting up a cron job/scheduled task for automatic cleanup
-     - Configure shorter retention periods in config.toml
-
-#### Frontend Issues
-
-1. **Interface Not Loading**
-   - **Issue**: Blank screen or loading spinner stuck
-   - **Solution**:
-     - Check browser console for errors (F12)
-     - Verify backend is running and accessible
-     - Clear browser cache and reload
-
-2. **Slow Response Times**
-   - **Issue**: Queries take too long to process
-   - **Solution**:
-     - Consider using smaller/faster models in config
-     - Reduce document collection size
-     - Optimize vector store settings in config.toml
-
-### Getting Help
-
-If you encounter issues not covered here:
-1. Check the [Issues](https://github.com/yourusername/VerseMind-RAG/issues) section on GitHub
-2. Submit a detailed bug report including:
-   - Steps to reproduce
-   - Error messages
-   - System configuration
-   - Log files from the `logs` directory
+For detailed usage instructions, sample queries, and best practices, please refer to the [User Guide](./docs/user_guide.md).
 
 ## Documentation
 
@@ -341,51 +254,17 @@ For detailed documentation, refer to:
 - [System Architecture Design](./docs/VerseMind-RAG%20系统架构设计.md)
 - [User Guide](./docs/user_guide.md)
 
-## Testing
+## Contributing
 
-The project includes comprehensive tests for both backend and frontend:
+Contributions to VerseMind-RAG are welcome! Here's how you can contribute:
 
-### Backend Tests
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-```bash
-# Run all tests with verbose output
-cd backend
-pytest -v
-
-# Run with test environment settings
-# Windows PowerShell
-$env:TEST_ENV='true'; python -m pytest -v
-# Linux/Mac
-TEST_ENV=true pytest -v
-```
-
-### Test Cleanup Scripts
-
-The project includes scripts to clean up temporary test files:
-
-```bash
-cd backend/scripts
-
-# Simple standalone cleanup script
-python simple_cleanup.py
-
-# Advanced cleanup using TestFileCleanup class
-python clean_storage_docs.py
-```
-
-These scripts help maintain disk space by removing temporary files created during tests, particularly in the `storage/documents` directory.
-
-## Continuous Integration
-
-VerseMind-RAG uses GitHub Actions for continuous integration to ensure code quality. The CI workflow:
-
-- Runs backend tests on each push and pull request
-- Installs dependencies automatically 
-- Sets up test environment variables
-- Runs cleanup scripts after tests
-- Performs frontend linting and tests
-
-You can see the CI configuration in `.github/workflows/ci.yml`.
+Please ensure your code passes all tests before submitting a pull request.
 
 ## Contributing
 
