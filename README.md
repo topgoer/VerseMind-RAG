@@ -2,6 +2,8 @@
 
 **Where Poetry Meets AI**
 
+[English](README.md) | [简体中文](README_CN.md)
+
 VerseMind-RAG is a document intelligence and semantic generation system designed to provide a complete RAG (Retrieval-Augmented Generation) solution. It supports document loading, chunking, parsing, vector embedding, indexing, semantic search, and text generation.
 
 ## Features
