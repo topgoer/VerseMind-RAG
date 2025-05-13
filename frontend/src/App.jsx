@@ -5,6 +5,34 @@ import MainContent from './components/MainContent';
 import { useLanguage } from './contexts/LanguageContext';
 import { loadConfig } from './utils/configLoader';
 
+// 从文档ID中提取文件名
+function extractFilenameFromDocId(documentId) {
+  if (!documentId || typeof documentId !== 'string') return null;
+  
+  try {
+    // 尝试解析格式如 "article_name_20250511_141012_b00ecba1" 的文档ID
+    const parts = documentId.split('_');
+    if (parts.length >= 3) {
+      // 寻找日期部分（通常是数字部分开始的位置）
+      let datePartIndex = -1;
+      for (let i = 0; i < parts.length; i++) {
+        if (/^\d{8}$/.test(parts[i])) {
+          datePartIndex = i;
+          break;
+        }
+      }
+      
+      if (datePartIndex > 0) {
+        // 提取日期前的所有部分作为文件名
+        return parts.slice(0, datePartIndex).join('_');
+      }
+    }
+  } catch (e) {
+    console.error("Error extracting filename from document ID:", e);
+  }
+  return null;
+}
+
 function App() {
   const { t, language } = useLanguage();
   const [activeModule, setActiveModule] = useState('chat');
@@ -26,8 +54,7 @@ function App() {
   const [chunks, setChunks] = useState([]);
   const [chunksLoading, setChunksLoading] = useState(false); // New state for chunks loading
   const [selectedDocumentId, setSelectedDocumentId] = useState(null); // Added for demonstration
-  const [parsedDocumentContent, setParsedDocumentContent] = useState(null); // New state for parsed document content
-  const [parsedDocumentLoading, setParsedDocumentLoading] = useState(false); // New state for parsed document loading
+  // Removing unused state variables for parsed document content and loading
   const [embeddings, setEmbeddings] = useState([]);
   const [indices, setIndices] = useState([]);
   const [searchResults, setSearchResults] = useState(null);
@@ -50,7 +77,7 @@ function App() {
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [currentTask, setCurrentTask] = useState(null);
   const [taskProgress, setTaskProgress] = useState('');
-  const notificationRef = useRef(null);
+  // Removed unused notificationRef
 
   useEffect(() => {
     loadConfig().then(cfg => {
@@ -79,6 +106,8 @@ function App() {
           const errorData = await response.json();
           errorDetail = errorData.detail || JSON.stringify(errorData);
         } catch (e) {
+          console.warn('Failed to parse error response as JSON:', e.message);
+          
           try {
             const text = await response.text();
             errorDetail = text || `Server error: ${response.status} (empty response)`;
@@ -87,6 +116,7 @@ function App() {
               errorDetail = errorDetail.substring(0, 200) + '... [content truncated]';
             }
           } catch (textErr) {
+            console.error('Failed to read error response as text:', textErr.message);
             errorDetail = `Server error: ${response.status} (cannot read response text)`;
           }
         }
@@ -110,10 +140,9 @@ function App() {
   // Define fetchParsed using useCallback
   const fetchParsed = useCallback(async (documentId) => {
     if (!documentId) {
-      setParsedDocumentContent(null); // Clear parsed content if no documentId
-      return;
+      return null; // Return null if no documentId
     }
-    setParsedDocumentLoading(true);
+    setLoading(true);
     setError(null);
     try {
       const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
@@ -127,6 +156,7 @@ function App() {
           const errorData = await response.json();
           errorDetail = errorData.detail || JSON.stringify(errorData);
         } catch (e) {
+          console.warn('Failed to parse error response as JSON:', e.message);
           try {
             const text = await response.text();
             errorDetail = text || `Server error: ${response.status} (empty response)`;
@@ -135,6 +165,7 @@ function App() {
               errorDetail = errorDetail.substring(0, 200) + '... [content truncated]';
             }
           } catch (textErr) {
+            console.error('Failed to read error response as text:', textErr.message);
             errorDetail = `Server error: ${response.status} (cannot read response text)`;
           }
         }
@@ -145,15 +176,15 @@ function App() {
       // Try to parse JSON response
       const data = await response.json();
       console.log(`Fetched parsed content for document ${documentId}`);
-      setParsedDocumentContent(data);
+      return data; // Return the data directly
     } catch (err) {
       console.error('Error fetching parsed document content:', err);
       setError(err.message || 'An unknown error occurred while fetching parsed document content.');
-      setParsedDocumentContent(null); // Clear parsed content on error
+      return null; // Return null on error
     } finally {
-      setParsedDocumentLoading(false);
+      setLoading(false);
     }
-  }, [setError]); // Dependencies for useCallback
+  }, [setError, setLoading]); // Dependencies for useCallback
 
   // Define fetchEmbeddings using useCallback
   const fetchEmbeddings = useCallback(async (documentId) => {
@@ -174,7 +205,13 @@ function App() {
           const errorData = await response.json();
           errorText = JSON.stringify(errorData);
         } catch (e) {
-          errorText = await response.text();
+          // Handle the exception more explicitly
+          try {
+            errorText = await response.text();
+          } catch (textError) {
+            errorText = `Failed to read error response: ${textError.message}`;
+            console.error('Failed to parse error response as text:', textError);
+          }
         }
         console.error('Failed to fetch embeddings:', response.status, errorText);
         throw new Error(`Failed to fetch embeddings${documentId ? ` for document ${documentId}` : ''}. Status: ${response.status}`);
@@ -263,10 +300,12 @@ function App() {
           const errorData = await response.json(); 
           errorDetail = errorData.detail || JSON.stringify(errorData);
         } catch (e) {
+          console.warn('Failed to parse error response as JSON:', e.message);
           try {
             const text = await response.text();
             errorDetail = text || `Server error: ${response.status} (empty response)`;
           } catch (textErr) {
+            console.error('Failed to read error response as text:', textErr.message);
             errorDetail = `Server error: ${response.status} (cannot read response text)`;
           }
         }
@@ -357,6 +396,7 @@ function App() {
         await fetchDocuments(); // Refresh the document list
         return responseData;
       } catch (jsonError) {
+        console.error('[App.jsx handleDocumentUpload] JSON parsing error:', jsonError.message);
         // If JSON parsing fails, try to get text content for debugging
         let errorTextContent = 'Failed to retrieve response content';
         try {
@@ -366,7 +406,7 @@ function App() {
             errorTextContent = errorTextContent.substring(0, 200) + '... [content truncated]';
           }
         } catch (textErr) {
-          console.warn('[App.jsx handleDocumentUpload] Error reading response text:', textErr);
+          console.warn('[App.jsx handleDocumentUpload] Error reading response text:', textErr.message);
         }
         
         console.error(
@@ -657,7 +697,13 @@ function App() {
           const errorData = await response.json();
           errorDetail = errorData.detail || JSON.stringify(errorData);
         } catch (e) {
-          errorDetail = await response.text();
+          // Properly handle the exception when JSON parsing fails
+          try {
+            errorDetail = await response.text() || `Failed to parse error response: ${e.message}`;
+          } catch (textError) {
+            errorDetail = `Failed to read error response: ${textError.message}`;
+            console.error('Error reading response text:', textError);
+          }
         }
         throw new Error(errorDetail || `Failed to create index. Status: ${response.status}`);
       }
@@ -730,6 +776,14 @@ function App() {
       
       // DEBUG: Log search results to verify similarity pattern
       console.log('Search result data:', data);
+      
+      // Make sure all similarity scores are consistently formatted as numbers
+      if (data && data.results && Array.isArray(data.results)) {
+        data.results = data.results.map(result => ({
+          ...result,
+          similarity: typeof result.similarity === 'string' ? parseFloat(result.similarity) : result.similarity
+        }));
+      }
       
       // Analyze similarity scores if results are available
       if (data && data.results && Array.isArray(data.results) && data.results.length > 0) {
@@ -813,6 +867,52 @@ function App() {
         }
       } else {
         console.log('No search results to analyze');
+      }
+      
+      // Process the document filename from search results here to ensure consistency
+      const processDocumentName = () => {
+        // Try immediate document_filename if available
+        if (data.document_filename) {
+          return data.document_filename;
+        }
+        
+        // Try to extract from document_id
+        if (data.document_id) {
+          const docId = data.document_id;
+          const timestampHashPattern = /(_\d{8}_\d{6}_[a-f0-9]+)$/;
+          let cleanId = docId.replace(timestampHashPattern, '');
+          
+          const timestampPattern = /_\d{8}$/;
+          if (timestampPattern.test(cleanId)) {
+            cleanId = cleanId.replace(timestampPattern, '');
+          }
+          return cleanId;
+        }
+        
+        // Try search info
+        if (data.search_info?.document_filename) {
+          return data.search_info.document_filename;
+        }
+        
+        // Try to get document name from index
+        if (data.index_id) {
+          const currentIndex = indices.find(idx => idx.index_id === data.index_id || idx.id === data.index_id);
+          if (currentIndex) {
+            if (currentIndex.name) return currentIndex.name;
+            if (currentIndex.documents && currentIndex.documents.length > 0) {
+              return currentIndex.documents[0].filename || null;
+            }
+          }
+          return indexId ? `Document from index ${indexId}` : null;
+        }
+        
+        return null;
+      };
+      
+      // Add document filename to search results if possible
+      const documentName = processDocumentName();
+      if (documentName) {
+        data.document_filename = documentName;
       }
       
       // Update both search results and currentSearchResult state
@@ -923,45 +1023,99 @@ function App() {
       let additionalInfo = '';
       if (searchId) {
         // Get the search result details if available
-        const searchResultDetails = searchResults || data.search_results;
+        const searchResultDetails = searchResults || currentSearchResult || data.search_results;
         const indexId = searchResultDetails?.index_id;
-        const indexInfo = indices.find(idx => idx.index_id === indexId);
-        const docInfo = indexInfo ? documents.find(doc => doc.id === indexInfo.document_id) : null;
         
-        // Get document name from search results if available
-        // Check multiple possible sources for document name
-        const searchResultDocName = 
-          currentSearchResult?.document_filename || 
-          data.search_results?.document_filename ||
-          searchResultDetails?.document_filename || 
-          null;
+        // Ensure we're using the same results that are stored in the global object for consistency
+        let resultsToUse = searchResultDetails?.results || [];
+        
+        // Check if we have a global object with potentially more accurate data
+        if (typeof window !== 'undefined' && window.verseMindCurrentSearchResults && 
+            window.verseMindCurrentSearchResults.search_id === searchId) {
+          resultsToUse = window.verseMindCurrentSearchResults.results || resultsToUse;
+          console.log("Using similarity scores from global search results object for consistency");
+        }
+        
+        // Get similarity scores if available - use the same format as in StorageInfoPanel
+        const topSimilarities = resultsToUse.slice(0, 3).map(r => r.similarity.toFixed(4)) || [];
+        const similarityInfo = topSimilarities.length > 0 
+          ? `\n${t('similarity')}: ${topSimilarities.join(', ')}` 
+          : '';
         
         // Get the appropriate labels based on the current language
         const usingContextLabel = t('usingDocumentContext');
         const docFilenameLabel = t('documentFilename');
         const searchIdLabel = t('searchIdLabel');
-        const indexLabel = t('indexId');
         
-        if (docInfo) {
-          additionalInfo = language === 'zh' 
-            ? `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${docInfo.filename}"\n${indexLabel} ${indexInfo.index_id}`
-            : `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${docInfo.filename}"\n${indexLabel} ${indexInfo.index_id}`;
-        } else if (indexInfo) {
-          additionalInfo = language === 'zh'
-            ? `\n\n---\n**[${usingContextLabel}]** ${indexLabel} ${indexInfo.index_id}`
-            : `\n\n---\n**[${usingContextLabel}]** ${indexLabel} ${indexInfo.index_id}`;
-        } else if (searchResultDocName) {
-          additionalInfo = language === 'zh'
-            ? `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${searchResultDocName}" (${searchIdLabel}: ${searchId})`
-            : `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${searchResultDocName}" (${searchIdLabel}: ${searchId})`;
-        } else {
-          // Try to get document info from the search_results in the data
-          const dataDocumentFilename = data.search_results?.document_filename || null;
+        // 使用更强大的文档名称提取逻辑
+        const getDocumentName = () => {
+          // 0. 首先尝试从全局对象获取文档名 (新增此步骤)
+          try {
+            if (typeof window !== 'undefined' && 
+                window.verseMindCurrentSearchResults && 
+                window.verseMindCurrentSearchResults.search_id === searchId &&
+                window.verseMindCurrentSearchResults.document_filename) {
+              return window.verseMindCurrentSearchResults.document_filename;
+            }
+          } catch (err) {
+            console.warn("Failed to access global search results object:", err);
+          }
           
-          additionalInfo = language === 'zh'
-            ? `\n\n---\n**[${usingContextLabel}]** ${dataDocumentFilename ? `${docFilenameLabel} "${dataDocumentFilename}"` : ''} (${searchIdLabel}: ${searchId})`
-            : `\n\n---\n**[${usingContextLabel}]** ${dataDocumentFilename ? `${docFilenameLabel} "${dataDocumentFilename}"` : ''} (${searchIdLabel}: ${searchId})`;
-        }
+          // 1. 尝试从currentSearchResult获取文档名
+          if (currentSearchResult?.search_id === searchId && currentSearchResult?.document_filename) {
+            return currentSearchResult.document_filename;
+          }
+          
+          // 2. 尝试从API响应获取文档名
+          if (data.search_results?.document_filename) {
+            return data.search_results.document_filename;
+          }
+          
+          // 3. 尝试从searchResultDetails获取文档名
+          if (searchResultDetails?.document_filename) {
+            return searchResultDetails.document_filename;
+          }
+          
+          // 4. 尝试从文档ID提取文件名
+          if (searchResultDetails?.document_id) {
+            const docId = searchResultDetails.document_id;
+            // 尝试移除时间戳和哈希部分
+            const timestampHashPattern = /(_\d{8}_\d{6}_[a-f0-9]+)$/;
+            let cleanId = docId.replace(timestampHashPattern, '');
+            
+            // 检查是否有其他时间戳模式需要清理
+            const timestampPattern = /_\d{8}$/;
+            if (timestampPattern.test(cleanId)) {
+              cleanId = cleanId.replace(timestampPattern, '');
+            }
+            
+            return cleanId;
+          }
+          
+          // 5. 尝试使用索引信息
+          if (indexId) {
+            const indexInfo = indices.find(idx => idx.index_id === indexId || idx.id === indexId);
+            if (indexInfo?.name) {
+              return `Index: ${indexInfo.name}`;
+            }
+            if (indexInfo?.documents && indexInfo.documents.length > 0) {
+              return indexInfo.documents[0].filename || `Document from index ${indexId}`;
+            }
+            return `Document from index ${indexId}`;
+          }
+          
+          // 6. 最后的备选方案 - 使用搜索ID
+          return `Search: ${searchId.substring(0, 8)}`;
+        };
+        
+        // 获取文档名称
+        const documentName = getDocumentName();
+        console.log(`[handleGenerateText] Using document name: "${documentName}" for search ID: ${searchId}`);
+        
+        // 始终显示文档名称与搜索ID和相似度信息
+        additionalInfo = language === 'zh'
+          ? `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${documentName}" (${searchIdLabel}: ${searchId})${similarityInfo}`
+          : `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${documentName}" (${searchIdLabel}: ${searchId})${similarityInfo}`;
       } else {
         // Clearly indicate when no document context was used
         const noContextLabel = t('noDocumentContext');
@@ -1000,22 +1154,131 @@ function App() {
     }
   }, [t, language, chatHistory, indices, documents, searchResults, currentSearchResult]);
 
-  const handleSearchAndGenerate = useCallback(async (indexId, query, model, provider = 'default') => {
+  const handleSearchAndGenerate = useCallback(async (indexId, query, model, provider = 'default', uploadedImage = null, searchParams = {}) => {
     try {
       // If indexId is provided, perform the search then generate 
       if (indexId) {
-        // First, perform the search
-        const searchResult = await handleSearch(indexId, query);
+        // First, perform the search with custom search parameters
+        const { similarityThreshold = 0.5, topK = 3 } = searchParams;
+        console.log(`Searching with params: similarityThreshold=${similarityThreshold}, topK=${topK}`);
+        
+        const searchResult = await handleSearch(indexId, query, topK, similarityThreshold, 100);
         // Fix: Check for search_id (from backend) instead of id
         const searchId = searchResult.search_id || null;
+        
+        // Extract document filename from search result with improved fallback logic
+        // This implements a more robust getDocumentName function similar to StorageInfoPanel
+        const getDocumentName = () => {
+          // First try to use the document_filename if available
+          if (searchResult?.document_filename) {
+            // Try to clean up the document name by removing timestamps and hashes
+            const filename = searchResult.document_filename;
+            
+            // Remove any timestamp pattern like _YYYYMMDD at the end
+            let cleanName = filename;
+            const timestampPattern = /_\d{8}$/;
+            if (timestampPattern.test(cleanName)) {
+              cleanName = cleanName.replace(timestampPattern, '');
+            }
+            
+            // Limit length for display
+            if (cleanName.length > 80) {
+              return cleanName.substring(0, 77) + '...';
+            }
+            
+            return cleanName;
+          } 
+          // Fall back to document_id if no filename is available
+          else if (searchResult?.document_id) {
+            const docId = searchResult.document_id;
+            // Try to remove timestamp and hash portions (e.g., _20250511_164327_e7081f26)
+            const timestampHashPattern = /(_\d{8}_\d{6}_[a-f0-9]+)$/;
+            let cleanId = docId.replace(timestampHashPattern, '');
+            
+            // Check if there's another timestamp pattern that needs to be cleaned
+            const timestampPattern = /_\d{8}$/;
+            if (timestampPattern.test(cleanId)) {
+              cleanId = cleanId.replace(timestampPattern, '');
+            }
+            
+            // Limit length for display
+            if (cleanId.length > 80) {
+              return cleanId.substring(0, 77) + '...';
+            }
+            
+            return cleanId;
+          }
+          // Try extracting from search info
+          else if (searchResult.search_info?.document_filename) {
+            const filename = searchResult.search_info.document_filename;
+            let cleanName = filename;
+            
+            // Clean any timestamp patterns
+            const timestampPattern = /_\d{8}$/;
+            if (timestampPattern.test(cleanName)) {
+              cleanName = cleanName.replace(timestampPattern, '');
+            }
+            
+            return cleanName;
+          }
+          // Try index name as a fallback
+          else if (searchResult?.index_id) {
+            return `Index: ${searchResult.index_id}`;
+          }
+          // If we still have no name, check the indices list
+          else {
+            const currentIndex = indices.find(idx => idx.index_id === indexId || idx.id === indexId);
+            if (currentIndex) {
+              if (currentIndex.name) {
+                return currentIndex.name;
+              } else if (currentIndex.documents && currentIndex.documents.length > 0) {
+                return currentIndex.documents[0].filename || `Document from index ${indexId}`;
+              }
+            }
+            // Final fallback
+            return `Document from index ${indexId}`;
+          }
+        };
+        
+        const documentFilename = getDocumentName();
         
         // Log search result with document information for better debugging
         const searchCompletedLabel = t('searchCompleted');
         const docFilenameLabel = t('documentFilename');
         const searchIdLabel = t('searchIdLabel');
         
-        if (searchResult.document_filename) {
-          console.log(`${searchCompletedLabel} - ${docFilenameLabel} "${searchResult.document_filename}" (${searchIdLabel}: ${searchId})`);
+        if (documentFilename) {
+          console.log(`${searchCompletedLabel} - ${docFilenameLabel} "${documentFilename}" (${searchIdLabel}: ${searchId})`);
+          // Store the document name for use in chat messages and update currentSearchResult
+          searchResult.document_filename = documentFilename;
+          
+          // Important - also update currentSearchResult with the document filename and search_id
+          const updatedSearchResult = {
+            ...searchResult,
+            document_filename: documentFilename,
+            search_id: searchId, // Ensure search_id is consistently stored
+            timestamp: new Date().toISOString(), // Add timestamp for sorting in StorageInfoPanel
+            // Ensure all similarity scores are properly formatted for consistent display
+            results: searchResult.results?.map(result => ({
+              ...result,
+              similarity: typeof result.similarity === 'string' ? parseFloat(result.similarity) : result.similarity
+            })) || []
+          };
+          
+          // Store in global object to allow StorageInfoPanel to access it
+          try {
+            // Only set if we're in a browser environment
+            if (typeof window !== 'undefined') {
+              window.verseMindCurrentSearchResults = updatedSearchResult;
+              console.log("Updated global search results object with document name and normalized similarity scores:", documentFilename);
+            }
+          } catch (err) {
+            console.warn("Failed to update global search results object:", err);
+          }
+          
+          // Update both state variables to ensure consistency
+          setCurrentSearchResult(updatedSearchResult);
+          setSearchResults(updatedSearchResult);
         } else {
           console.log(`${searchCompletedLabel} (${searchIdLabel}: ${searchId})`);
         }
@@ -1026,12 +1289,12 @@ function App() {
           return await handleGenerateText(null, query, provider, model);
         }
         
-        // Generate text based on search results
-        return await handleGenerateText(searchId, query, provider, model);
+        // Generate text based on search results, passing document filename as metadata in the searchResult
+        return await handleGenerateText(searchId, query, provider, model, uploadedImage);
       } else {
         // No index provided, directly generate text without search
         console.log('No index selected, generating text directly without search context');
-        return await handleGenerateText(null, query, provider, model);
+        return await handleGenerateText(null, query, provider, model, uploadedImage);
       }
     } catch (err) {
       console.error('Error in search and generate workflow:', err);
@@ -1054,7 +1317,14 @@ function App() {
       if (activeModule === 'chunk') {
         fetchChunks(selectedDocument.id);
       } else if (activeModule === 'parse') {
-        fetchParsed(selectedDocument.id);
+        // Call fetchParsed but don't need to store the result in state anymore
+        fetchParsed(selectedDocument.id).then(result => {
+          if (result) {
+            console.log('Parsed document content fetched successfully');
+          }
+        }).catch(err => {
+          console.error('Failed to fetch parsed document:', err);
+        });
       } else if (activeModule === 'embed') {
         fetchEmbeddings(selectedDocument.id);
       }
