@@ -55,13 +55,13 @@ VerseMind-RAG is a document intelligence and semantic generation system designed
 
    **Option A: Using pip with requirements.txt**
    ```bash
-   cd ../backend
+   cd backend
    pip install -r requirements.txt
    ```
 
    **Option B: Using Poetry**
    ```bash
-   cd ../backend
+   cd backend
    # Install Poetry if not already installed
    # pip install poetry
    poetry install
@@ -69,7 +69,7 @@ VerseMind-RAG is a document intelligence and semantic generation system designed
 
    **Option C: Using uv (faster Python package installer)**
    ```bash
-   cd ../backend
+   cd backend
    # Install uv if not already installed
    # pip install uv
    uv pip install -r requirements.txt
@@ -89,6 +89,10 @@ VerseMind-RAG is a document intelligence and semantic generation system designed
    # Using the convenience script (Windows):
    start-backend.bat
    
+   # Using the convenience script (macOS/Linux):
+   chmod +x ./start-backend.sh  # Make executable (first time only)
+   ./start-backend.sh
+   
    # OR manually:
    cd backend
    conda activate versemind-rag  # Or your virtual environment
@@ -105,8 +109,12 @@ VerseMind-RAG is a document intelligence and semantic generation system designed
    cd frontend
    npm run dev
    
-   # OR using convenience script:
+   # OR using convenience script (Windows):
    start-frontend.bat dev
+   
+   # OR using convenience script (macOS/Linux):
+   chmod +x ./start-frontend.sh  # Make executable (first time only)
+   ./start-frontend.sh dev
    ```
    
    ```bash
@@ -115,8 +123,12 @@ VerseMind-RAG is a document intelligence and semantic generation system designed
    npm run build
    npm run preview
    
-   # OR using convenience script:
+   # OR using convenience script (Windows):
    start-frontend.bat
+   
+   # OR using convenience script (macOS/Linux):
+   chmod +x ./start-frontend.sh  # Make executable (first time only)
+   ./start-frontend.sh
    ```
 
 3. **Access the application:**
