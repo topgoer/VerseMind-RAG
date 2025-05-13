@@ -2,7 +2,10 @@
 
 **诗意与智慧的交融**
 
-[English](README.md) | [简体中文](README_CN.md)
+<p align="center">
+  <a href="README.md">English</a> |
+  <a href="README_CN.md">简体中文</a>
+</p>
 
 VerseMind-RAG 是一个文档智能与语义生成系统，提供完整的 RAG（检索增强生成）解决方案，支持文档加载、分块、解析、向量嵌入、索引、语义搜索与文本生成。
 
