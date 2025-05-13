@@ -9,11 +9,11 @@ from typing import Dict, List, Any, Optional
 class SearchService:
     """语义搜索服务，支持基于向量相似度的检索"""
     
-    def __init__(self, indices_dir=os.path.join("backend", "storage", "indices"), 
+    def __init__(self, indices_dir=os.path.join("storage", "indices"), 
                  embeddings_dir=os.path.join("backend", "04-embedded-docs"), 
-                 results_dir=os.path.join("backend", "storage", "results")):
+                 results_dir=os.path.join("storage", "results")):
         self.logger = logging.getLogger("SearchService")
-        self.logger.setLevel(logging.WARNING)  # Changed to WARNING to hide even search results
+        self.logger.setLevel(logging.DEBUG)  # 设置为DEBUG级别以便调试
 
         # 使用绝对路径
         self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
@@ -393,11 +393,13 @@ class SearchService:
         """查找指定ID的索引文件"""
         self.logger.debug(f"Searching for index file with index_id='{index_id}'")
         
-        # 只在主索引目录中查找
-        possible_dirs = [self.indices_dir]
+        # 优先在索引元数据目录中查找，也在向量数据库目录中查找（兼容旧版本）
+        from app.core.config import settings
+        vector_db_dir = settings.VECTOR_STORE_PERSIST_DIR if hasattr(settings, 'VECTOR_STORE_PERSIST_DIR') else os.path.join(self.storage_dir, "storage", "vector_db")
+        possible_dirs = [self.indices_dir, vector_db_dir]
         
         # 打印搜索目录列表
-        self.logger.debug(f"Will search in directory: {self.indices_dir}")
+        self.logger.debug(f"Will search in directories: {possible_dirs}")
             
         for dir_path in possible_dirs:
             self.logger.debug(f"Checking directory: {dir_path}")

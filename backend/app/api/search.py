@@ -12,7 +12,7 @@ async def search_endpoint(
     index_id: str = Body(...),
     query: str = Body(...),
     top_k: int = Body(3),
-    similarity_threshold: float = Body(0.7),
+    similarity_threshold: float = Body(0.5),
     min_chars: int = Body(100)
 ):
     """
@@ -32,7 +32,7 @@ async def search_with_index(
     index_id: str,
     query: str = Body(...),
     top_k: int = Body(3),
-    similarity_threshold: float = Body(0.7),
+    similarity_threshold: float = Body(0.5),
     min_chars: int = Body(100)
 ):
     """

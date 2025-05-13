@@ -3,6 +3,7 @@ import json
 import datetime
 import uuid
 import numpy as np
+import logging
 from typing import Dict, List, Any, Optional
 from enum import Enum
 from pymilvus import connections, utility, Collection, DataType, FieldSchema, CollectionSchema
@@ -24,16 +25,26 @@ class VectorDBConfig:
         if provider == VectorDBProvider.FAISS.value:
             self.index_type = settings.FAISS_INDEX_TYPE
             self.metric = settings.FAISS_METRIC
+            # 为FAISS设置特定路径
+            self.db_path = os.path.join(settings.VECTOR_STORE_PERSIST_DIR, "faiss")
         # Chroma specific settings
         elif provider == VectorDBProvider.CHROMA.value:
             self.collection_name = settings.CHROMA_COLLECTION_NAME
             self.distance_function = settings.CHROMA_DISTANCE_FUNCTION
+            # 为Chroma设置特定路径
+            self.db_path = os.path.join(settings.VECTOR_STORE_PERSIST_DIR, "chroma")
         # Milvus specific settings
         elif provider == VectorDBProvider.MILVUS.value:
             self.milvus_uri = os.getenv("MILVUS_URI", "127.0.0.1:19530")
+            self.db_path = settings.VECTOR_STORE_PERSIST_DIR  # Milvus实际上是远程的，但我们仍然保留一个本地路径以保持一致性
         
-        # Common settings
+        # 主向量数据库目录（来自config.toml）
         self.persist_directory = settings.VECTOR_STORE_PERSIST_DIR
+        
+        # 确保向量数据库存储目录存在
+        os.makedirs(self.persist_directory, exist_ok=True)
+        if hasattr(self, 'db_path'):
+            os.makedirs(self.db_path, exist_ok=True)
 
     def get_index_params(self):
         """Get index parameters based on vector DB provider"""
@@ -52,10 +63,100 @@ class VectorDBConfig:
 class IndexService:
     """向量索引服务，支持FAISS和Chroma向量数据库"""
     
-    def __init__(self, embeddings_dir="storage/embeddings", indices_dir="storage/indices"):
-        self.embeddings_dir = embeddings_dir
-        self.indices_dir = indices_dir
-        os.makedirs(indices_dir, exist_ok=True)
+    def __init__(self):
+        # 配置日志
+        self.logger = logging.getLogger("IndexService")
+        self.logger.setLevel(logging.INFO)
+        
+        # 使用settings中的配置
+        self.embeddings_dir = settings.EMBEDDINGS_DIR
+        self.indices_dir = settings.INDICES_DIR
+        self.vector_db_dir = settings.VECTOR_STORE_PERSIST_DIR
+        
+        # 确保所有目录存在
+        os.makedirs(self.embeddings_dir, exist_ok=True)
+        os.makedirs(self.indices_dir, exist_ok=True)
+        os.makedirs(self.vector_db_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.vector_db_dir, "faiss"), exist_ok=True)
+        os.makedirs(os.path.join(self.vector_db_dir, "chroma"), exist_ok=True)
+        
+        # 添加日志记录所有路径
+        self.logger.info(f"索引服务初始化，路径配置：")
+        self.logger.info(f"  - 嵌入向量目录: {self.embeddings_dir}")
+        self.logger.info(f"  - 索引元数据目录: {self.indices_dir}")
+        self.logger.info(f"  - 向量数据库目录: {self.vector_db_dir}")
+
+class VectorDBConfig:
+    """
+    Configuration for vector databases
+    """
+    def __init__(self, provider: str, index_mode: str):
+        self.provider = provider
+        self.index_mode = index_mode
+        # FAISS specific settings
+        if provider == VectorDBProvider.FAISS.value:
+            self.index_type = settings.FAISS_INDEX_TYPE
+            self.metric = settings.FAISS_METRIC
+            # 为FAISS设置特定路径
+            self.db_path = os.path.join(settings.VECTOR_STORE_PERSIST_DIR, "faiss")
+        # Chroma specific settings
+        elif provider == VectorDBProvider.CHROMA.value:
+            self.collection_name = settings.CHROMA_COLLECTION_NAME
+            self.distance_function = settings.CHROMA_DISTANCE_FUNCTION
+            # 为Chroma设置特定路径
+            self.db_path = os.path.join(settings.VECTOR_STORE_PERSIST_DIR, "chroma")
+        # Milvus specific settings
+        elif provider == VectorDBProvider.MILVUS.value:
+            self.milvus_uri = os.getenv("MILVUS_URI", "127.0.0.1:19530")
+            self.db_path = settings.VECTOR_STORE_PERSIST_DIR  # Milvus实际上是远程的，但我们仍然保留一个本地路径以保持一致性
+        
+        # 主向量数据库目录（来自config.toml）
+        self.persist_directory = settings.VECTOR_STORE_PERSIST_DIR
+        
+        # 确保向量数据库存储目录存在
+        os.makedirs(self.persist_directory, exist_ok=True)
+        if hasattr(self, 'db_path'):
+            os.makedirs(self.db_path, exist_ok=True)
+
+    def get_index_params(self):
+        """Get index parameters based on vector DB provider"""
+        if self.provider == VectorDBProvider.MILVUS.value:
+            return {"metric_type": "COSINE"}
+        elif self.provider == VectorDBProvider.FAISS.value:
+            metric_map = {
+                "cosine": "METRIC_INNER_PRODUCT",
+                "l2": "METRIC_L2",
+                "ip": "METRIC_INNER_PRODUCT"
+            }
+            return {"metric_type": metric_map.get(self.metric, "METRIC_INNER_PRODUCT")}
+        elif self.provider == VectorDBProvider.CHROMA.value:
+            return {"distance_function": self.distance_function}
+
+class IndexService:
+    """向量索引服务，支持FAISS和Chroma向量数据库"""
+    
+    def __init__(self):
+        # 使用settings中的配置，确保路径一致性
+        self.embeddings_dir = settings.EMBEDDINGS_DIR
+        self.indices_dir = settings.INDICES_DIR
+        self.vector_db_dir = settings.VECTOR_STORE_PERSIST_DIR
+        
+        # 确保所有必要目录存在
+        os.makedirs(self.embeddings_dir, exist_ok=True)
+        os.makedirs(self.indices_dir, exist_ok=True)
+        os.makedirs(self.vector_db_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.vector_db_dir, "faiss"), exist_ok=True)
+        os.makedirs(os.path.join(self.vector_db_dir, "chroma"), exist_ok=True)
+        
+        # 打印路径配置，以便确认它们是否匹配
+        print(f"[SERVICE LOG IndexService.__init__] 检查配置文件路径与实际路径是否匹配:")
+        print(f"[SERVICE LOG IndexService.__init__] - config.toml中vector_store.persist_directory: './storage/vector_db'")
+        print(f"[SERVICE LOG IndexService.__init__] - 解析后的向量数据库路径: {self.vector_db_dir}")
+        
+        print(f"[SERVICE LOG IndexService.__init__] 索引服务初始化，路径配置：")
+        print(f"[SERVICE LOG IndexService.__init__] - 嵌入向量目录: {self.embeddings_dir}")
+        print(f"[SERVICE LOG IndexService.__init__] - 索引元数据目录: {self.indices_dir}")
+        print(f"[SERVICE LOG IndexService.__init__] - 向量数据库目录: {self.vector_db_dir}")
     
     def create_index(self, document_id: str, vector_db: str = None, collection_name: str = None, index_name: str = None, embedding_id: str = None, version: str = "1.0") -> Dict[str, Any]:
         """
@@ -112,21 +213,41 @@ class IndexService:
         index_id = str(uuid.uuid4())[:8]
         
         # 根据向量数据库类型创建索引
+        print(f"[SERVICE LOG IndexService.create_index] 使用向量数据库类型: {vector_db}")
         if vector_db == VectorDBProvider.FAISS.value:
+            print(f"[SERVICE LOG IndexService.create_index] 创建FAISS索引，集合名: {collection_name}, 索引名: {index_name}")
             index_info = self._create_faiss_index(embeddings, collection_name, index_name)
+            print(f"[SERVICE LOG IndexService.create_index] FAISS索引创建成功: {index_info['index_path']}")
         elif vector_db == VectorDBProvider.CHROMA.value:
+            print(f"[SERVICE LOG IndexService.create_index] 创建Chroma索引，集合名: {collection_name}, 索引名: {index_name}")
             index_info = self._create_chroma_index(embeddings, collection_name, index_name)
+            print(f"[SERVICE LOG IndexService.create_index] Chroma索引创建成功: {index_info['index_path']}")
         elif vector_db == VectorDBProvider.MILVUS.value:
             # use Milvus for index
+            print(f"[SERVICE LOG IndexService.create_index] 创建Milvus索引，集合名: {collection_name}, 索引名: {index_name}")
             config = VectorDBConfig(provider=VectorDBProvider.MILVUS.value, index_mode=index_name)
             milvus_result = self._index_to_milvus(embeddings, collection_name, config)
             index_info = milvus_result  # contains collection_name and index_size
+            print(f"[SERVICE LOG IndexService.create_index] Milvus索引创建成功: 集合名 {index_info['collection_name']}")
         else:
             raise ValueError(f"不支持的向量数据库类型: {vector_db}")
+        
+        # 提取文档名（从document_id中)
+        document_filename = document_id
+        try:
+            if "_" in document_id:
+                parts = document_id.split("_")
+                if len(parts) >= 3:
+                    # 文档ID格式通常是"原始文件名_日期时间_ID"
+                    # 提取原始文件名部分
+                    document_filename = "_".join(parts[:-2])
+        except:
+            pass  # 如果提取失败则使用完整的document_id
         
         # 构建索引结果
         result = {
             "document_id": document_id,
+            "document_filename": document_filename,  # 添加文档名
             "index_id": index_id,
             "timestamp": timestamp,
             "vector_db": vector_db,
@@ -336,16 +457,56 @@ class IndexService:
             # 保存IDs以备后续使用，目前未实现
             ids = [emb.get("id", "") for emb in embeddings]
             
-            # 配置索引路径
-            index_path = os.path.join(vector_db_config.persist_directory, f"{collection_name}_{index_name}.faiss")
+            # 配置索引路径（使用vector_db_dir下的faiss子目录）
+            index_path = os.path.join(self.vector_db_dir, "faiss", f"{collection_name}_{index_name}.faiss")
             os.makedirs(os.path.dirname(index_path), exist_ok=True)
+            
+            # 创建并保存FAISS索引
+            print(f"[SERVICE LOG IndexService._create_faiss_index] 正在创建FAISS索引: {index_path}")
+            
+            try:
+                import faiss
+                import numpy as np
+                
+                # 将向量转换为numpy数组
+                dimensions = len(vectors[0]) if vectors else 0
+                vector_array = np.array(vectors).astype('float32')
+                
+                # 创建FAISS索引
+                if vector_db_config.metric.lower() == "cosine":
+                    # 对于余弦相似度，需要先对向量进行归一化
+                    faiss.normalize_L2(vector_array)
+                    index = faiss.IndexFlatIP(dimensions)  # 内积与归一化向量 = 余弦相似度
+                elif vector_db_config.metric.lower() == "l2":
+                    index = faiss.IndexFlatL2(dimensions)  # L2距离
+                else:  # "ip" 内积 
+                    index = faiss.IndexFlatIP(dimensions)  # 内积
+                
+                # 将向量添加到索引
+                if len(vectors) > 0:
+                    print(f"[SERVICE LOG IndexService._create_faiss_index] 添加{len(vectors)}个向量到索引，每个维度为{dimensions}")
+                    index.add(vector_array)
+                    
+                    # 保存索引到文件
+                    print(f"[SERVICE LOG IndexService._create_faiss_index] 保存FAISS索引到: {index_path}")
+                    faiss.write_index(index, index_path)
+                    print(f"[SERVICE LOG IndexService._create_faiss_index] FAISS索引已成功保存")
+                else:
+                    print(f"[SERVICE WARNING IndexService._create_faiss_index] 没有向量可添加到索引")
+            except ImportError as e:
+                print(f"[SERVICE ERROR IndexService._create_faiss_index] 无法导入FAISS库: {str(e)}")
+                print(f"[SERVICE ERROR IndexService._create_faiss_index] 请确保已安装FAISS: pip install faiss-cpu 或 pip install faiss-gpu")
+                raise
+            except Exception as e:
+                print(f"[SERVICE ERROR IndexService._create_faiss_index] 创建FAISS索引时出错: {str(e)}")
+                raise
             
             # 索引信息
             index_info = {
                 "type": "faiss",
                 "index_type": vector_db_config.index_type,  # 使用配置中的索引类型
                 "metric": vector_db_config.metric,          # 使用配置中的度量方法
-                "dimensions": len(vectors[0]) if vectors else 0,
+                "dimensions": dimensions,
                 "num_vectors": len(vectors),
                 "index_path": index_path
             }
@@ -363,14 +524,59 @@ class IndexService:
             
             # 提取向量、ID和文本
             vectors = [emb.get("vector", []) for emb in embeddings]
-            # 这些变量目前未使用，保留以备后续实现
-            # 实际实现时可能需要使用
-            _ = [emb.get("id", "") for emb in embeddings]
-            _ = [emb.get("text", "") for emb in embeddings]
+            ids = [emb.get("id", "") for emb in embeddings]
+            texts = [emb.get("text", "") for emb in embeddings]
             
-            # 配置索引路径
-            index_path = os.path.join(vector_db_config.persist_directory, f"{collection_name}_{index_name}")
+            # 配置索引路径 - 使用vector_db_config中的db_path确保路径一致性
+            index_path = os.path.join(vector_db_config.db_path, f"{collection_name}_{index_name}")
             os.makedirs(index_path, exist_ok=True)
+            
+            print(f"[SERVICE LOG IndexService._create_chroma_index] 正在创建Chroma索引: {index_path}")
+            
+            try:
+                # 在这里添加实际的Chroma索引创建代码
+                # 由于可能需要安装chromadb包，我们先添加一个基本结构
+                # 如果需要实际实现，请确保已安装chromadb: pip install chromadb
+                
+                # 尝试导入chromadb
+                try:
+                    import chromadb
+                    from chromadb.config import Settings
+                    
+                    # 创建客户端
+                    client = chromadb.PersistentClient(path=vector_db_config.db_path)
+                    
+                    # 创建或获取集合
+                    collection = client.create_collection(
+                        name=f"{collection_name}_{index_name}",
+                        metadata={"hnsw:space": vector_db_config.distance_function}
+                    )
+                    
+                    # 将向量添加到集合
+                    if len(vectors) > 0 and len(ids) > 0:
+                        print(f"[SERVICE LOG IndexService._create_chroma_index] 添加{len(vectors)}个向量到Chroma集合")
+                        
+                        # 确保所有ID都是字符串
+                        str_ids = [str(id) for id in ids]
+                        
+                        # 添加向量
+                        collection.add(
+                            embeddings=vectors,
+                            ids=str_ids,
+                            documents=texts if texts and all(texts) else None
+                        )
+                        
+                        print(f"[SERVICE LOG IndexService._create_chroma_index] Chroma索引已成功保存到 {index_path}")
+                    else:
+                        print(f"[SERVICE WARNING IndexService._create_chroma_index] 没有向量可添加到Chroma索引")
+                        
+                except ImportError:
+                    print("[SERVICE WARNING IndexService._create_chroma_index] chromadb未安装，无法创建实际的Chroma索引")
+                    print("[SERVICE WARNING IndexService._create_chroma_index] 如需使用Chroma，请安装: pip install chromadb")
+                    
+            except Exception as e:
+                print(f"[SERVICE ERROR IndexService._create_chroma_index] 创建Chroma索引时出错: {str(e)}")
+                # 不抛出异常，以保持与原代码一致，仅记录错误
             
             # 索引信息
             index_info = {

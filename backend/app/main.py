@@ -5,7 +5,7 @@ import os
 import sys
 
 # 设置基本日志配置
-logging.basicConfig(level=logging.WARNING)  # 将默认日志级别提高到 WARNING
+logging.basicConfig(level=logging.DEBUG)  # 设置日志级别为DEBUG以便调试
 
 # 创建一个将标准输出重定向到日志系统的处理程序
 class PrintToLogger:
@@ -43,6 +43,7 @@ logging.getLogger("SearchService").setLevel(logging.WARNING)  # Changed from INF
 
 # 导入API路由
 from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api, debug
+from app.api import debug_storage
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -104,6 +105,7 @@ api_router.include_router(index.router, prefix="/index", tags=["index"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(generate.router, prefix="/generate", tags=["generate"])
 api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
+api_router.include_router(debug_storage.router, prefix="/debug", tags=["debug"])
 
 # 将路由添加到应用
 app.include_router(api_router, prefix="/api")

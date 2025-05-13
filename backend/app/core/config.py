@@ -15,10 +15,9 @@ EXAMPLE_CONFIG_FILE_PATH = BACKEND_ROOT.parent / "config" / "config.example.toml
 class Settings:
     def __init__(self, config_data: dict):
         storage_config = config_data.get("STORAGE", {})
-        
-        # Get raw values from config or use defaults (relative to BACKEND_ROOT)
+          # Get raw values from config or use defaults (relative to BACKEND_ROOT)
         raw_embeddings_dir = storage_config.get("EMBEDDINGS_DIR", "04-embedded-docs/")
-        raw_indices_dir = storage_config.get("INDICES_DIR", "storage/indices/")
+        raw_indices_dir = storage_config.get("INDICES_DIR", "../storage/indices/")  # Updated path to match with vector_store paths
         raw_documents_dir = storage_config.get("DOCUMENTS_DIR", "01-loaded_docs/") # Example default
         raw_chunks_dir = storage_config.get("CHUNKS_DIR", "02-chunked-docs/")    # Example default
         raw_parsed_dir = storage_config.get("PARSED_DIR", "03-parsed-docs/")      # Example default

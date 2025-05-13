@@ -3,6 +3,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
 import ReactMarkdown from 'react-markdown';
 import { Paperclip, X } from 'lucide-react'; // Import icons
+import StorageInfoPanel from './StorageInfoPanel'; // 导入StorageInfoPanel组件
 
 function ChatInterface({ 
   indices, 
@@ -22,6 +23,10 @@ function ChatInterface({
   const [selectedImage, setSelectedImage] = useState(null); // State for selected image
   const [config, setConfig] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
+  // Add new states for search parameters
+  const [similarityThreshold, setSimilarityThreshold] = useState(0.5);
+  const [topK, setTopK] = useState(3);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const chatEndRef = useRef(null);
   const imageInputRef = useRef(null); // Ref for hidden file input
   const textareaRef = useRef(null);
@@ -70,6 +75,16 @@ function ChatInterface({
           if (configData.model_groups[defaultProvider] && configData.model_groups[defaultProvider].length > 0) {
             setSelectedModel(configData.model_groups[defaultProvider][0].id);
           }
+        }
+      }
+      
+      // Set default search parameters from config if available
+      if (configData && configData.search_params) {
+        if (configData.search_params.similarity_threshold) {
+          setSimilarityThreshold(configData.search_params.similarity_threshold);
+        }
+        if (configData.search_params.top_k) {
+          setTopK(configData.search_params.top_k);
         }
       }
     };
@@ -131,10 +146,16 @@ function ChatInterface({
     console.log('[ChatInterface][handleSendMessage] selectedIndex:', selectedIndex);
     
     if (typeof onSendMessage === 'function') {
+      // 创建搜索参数对象
+      const searchParams = {
+        similarityThreshold: similarityThreshold,
+        topK: topK
+      };
+      
       // Pass the necessary parameters to onSendMessage (which is handleSearchAndGenerate)
       // This will first search the index and then generate text based on the search results
       // If no index is selected, it will generate text without search context
-      onSendMessage(selectedIndex || null, inputMessage, selectedModel, selectedProvider, selectedImage);
+      onSendMessage(selectedIndex || null, inputMessage, selectedModel, selectedProvider, selectedImage, searchParams);
     } else {
       console.error("CRITICAL ERROR: onSendMessage prop in ChatInterface is not a function!", {
         propType: typeof onSendMessage,
@@ -159,8 +180,35 @@ function ChatInterface({
     }
   };
 
+  // 添加存储信息功能
+  const [showStorageInfo, setShowStorageInfo] = useState(false);
+  
   return (
     <div className="flex flex-col h-full w-full bg-white">
+      {/* 存储信息按钮 - 调整顶部位置与语言按钮对齐 */}
+      <div className="absolute top-4 right-24 z-10">
+        <button 
+          onClick={() => setShowStorageInfo(!showStorageInfo)}
+          className="text-xs px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {showStorageInfo ? t('hideStorageInfo', '隐藏存储信息') : t('showStorageInfo', '显示存储信息')}
+        </button>
+      </div>
+      
+      {/* 显示存储信息面板 */}
+      {showStorageInfo && (
+        <div className="absolute top-12 right-2 z-20 w-96">
+          <StorageInfoPanel 
+            indexId={selectedIndex} 
+            forceRefresh={true} 
+            key={`storage-panel-${selectedIndex}-${chatHistory.length}`} // Force re-render when chat history changes or index changes
+          />
+        </div>
+      )}
+      
       {/* 选择区域 */}
       <div className="w-full flex flex-wrap items-center gap-4 px-6 py-3 bg-white border-b border-gray-200" style={{zIndex:2}}>
         {/* 索引选择 */}
@@ -225,6 +273,42 @@ function ChatInterface({
             ))}
           </select>
         </div>
+        {/* 高级设置 */}
+        <div className="flex flex-col">
+          <label className="text-xs text-gray-500 mb-1">{t('advancedSettings')}</label>
+          <button
+            className="px-2 py-1 border border-gray-300 rounded-md"
+            onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+          >
+            {showAdvancedSettings ? t('hide') : t('show')}
+          </button>
+        </div>
+        {showAdvancedSettings && (
+          <div className="flex flex-wrap gap-4 mt-2">
+            <div className="flex flex-col">
+              <label className="text-xs text-gray-500 mb-1">{t('similarityThreshold')}</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+                value={similarityThreshold}
+                onChange={e => setSimilarityThreshold(parseFloat(e.target.value))}
+                className="px-2 py-1 border border-gray-300 rounded-md"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-gray-500 mb-1">{t('topK')}</label>
+              <input
+                type="number"
+                min="1"
+                value={topK}
+                onChange={e => setTopK(parseInt(e.target.value, 10))}
+                className="px-2 py-1 border border-gray-300 rounded-md"
+              />
+            </div>
+          </div>
+        )}
       </div>
       {/* 聊天消息区 */}
       <div className="flex-1 overflow-y-auto px-0 py-4 w-full" style={{background:'#f7f7fa'}}>

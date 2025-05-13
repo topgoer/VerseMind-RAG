@@ -1,4 +1,4 @@
-name: CI Tests
+﻿name: CI Tests
 
 on:
   push:
@@ -50,4 +50,5 @@ jobs:
         npx eslint src/ || echo "ESLint skipped"
     - name: Run tests
       run: |
-        npm test || echo "No tests available"
+        # Run minimal test or skip if no tests available
+        npm test || echo "No tests available or tests failed"

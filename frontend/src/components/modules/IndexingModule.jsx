@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
 import { fetchEmbeddingsDirectly, fetchIndicesDirectly } from '../../services/api';
+import StorageInfoPanel from './StorageInfoPanel';
 
 // Default vector databases if config fails to load
 const DEFAULT_VECTOR_DBS = {
@@ -284,7 +285,14 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
               required
               disabled={!Array.isArray(embeddings) || embeddings.length === 0 || loading}
             >
-              <option value="">{loading ? t('loading') : (!Array.isArray(embeddings) || embeddings.length === 0) ? t('noEmbeddingsAvailable') : t('selectEmbeddings')}</option>
+              <option value="">
+                {loading 
+                  ? t('loading') 
+                  : (!Array.isArray(embeddings) || embeddings.length === 0) 
+                    ? t('noEmbeddingsAvailable') 
+                    : t('selectEmbeddings')
+                }
+              </option>
               {/* Ensure embeddings and documents are arrays before mapping */}
               {Array.isArray(embeddings) && Array.isArray(documents) && embeddings.map((emb) => {
                 const doc = documents.find(d => d.id === emb.document_id);

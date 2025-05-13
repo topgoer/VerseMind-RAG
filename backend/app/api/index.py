@@ -6,11 +6,8 @@ from app.services.index_service import IndexService
 from app.core.config import settings  # Changed import to use app.core.config
 
 router = APIRouter()
-# Pass the configured embeddings and indices directories to the service
-index_service = IndexService(
-    embeddings_dir=settings.EMBEDDINGS_DIR, 
-    indices_dir=settings.INDICES_DIR
-)
+# Initialize the index service which now gets settings internally
+index_service = IndexService()
 
 @router.post("/create")
 async def create_index(

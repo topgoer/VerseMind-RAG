@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import PropTypes from 'prop-types';
 
 // 创建语言上下文
 export const LanguageContext = createContext();
@@ -12,6 +13,33 @@ export const translations = {
     copyright: '© 2025 VerseMind',
     providerLabel: 'Provider',
     modelLabel: 'Model',
+    
+    // Storage Info Panel
+    storageInfo: 'Storage Information',
+    currentSearch: 'Current Search',
+    similarityRange: 'Similarity Range',
+    thresholdExplanation: 'The threshold determines what content is considered relevant',
+    higherForPrecision: 'higher values mean more precision',
+    vectorDatabaseLocation: 'Vector Database Location',
+    embeddingsLocation: 'Embeddings Location',
+    activeVectorDatabases: 'Active Vector Databases',
+    statistics: 'Statistics',
+    totalIndices: 'Total Indices',
+    embeddingFiles: 'Embedding Files',
+    recentSearches: 'Recent Searches',
+    similarityExplanation: 'Higher similarity scores indicate more relevant results',
+    topResults: 'Top Results',
+    aboveThreshold: 'above threshold',
+    noResultsAboveThreshold: 'No results above threshold',
+    resultsFound: 'results found',
+    belowThreshold: 'below threshold',
+    
+    // 搜索参数
+    advancedSettings: 'Advanced Settings',
+    show: 'Show',
+    hide: 'Hide',
+    similarityThreshold: 'Similarity Threshold',
+    topK: 'Number of Results',
     
     // 侧边栏模块
     modules: 'Modules',
@@ -141,13 +169,13 @@ export const translations = {
     queryText: 'Query Text',
     queryPlaceholder: 'Enter your question or query...',
     resultCount: 'Result Count',
-    similarityThreshold: 'Similarity Threshold',
     minCharacters: 'Min Characters',
     performSearch: 'Perform Search',
     searchResults: 'Search Results',
     queryInfo: 'Query Information',
     searchId: 'Search ID:',
     documentFilename: 'Document:',
+    documentFromSearch: 'Search Results',
     documentSource: 'Source Document:',
     documentReference: 'Document Reference:',
     documentContext: 'Document Context',
@@ -235,6 +263,33 @@ export const translations = {
     copyright: '© 2025 VerseMind',
     providerLabel: '提供商',
     modelLabel: '模型',
+    
+    // Storage Info Panel
+    storageInfo: '存储信息',
+    currentSearch: '当前搜索',
+    similarityRange: '相似度范围',
+    thresholdExplanation: '阈值决定了内容被视为相关的标准',
+    higherForPrecision: '值越高意味着精度越高',
+    vectorDatabaseLocation: '向量数据库位置',
+    embeddingsLocation: '嵌入向量位置',
+    activeVectorDatabases: '活跃的向量数据库',
+    statistics: '统计信息',
+    aboveThreshold: '超过阈值',
+    noResultsAboveThreshold: '没有结果超过阈值',
+    totalIndices: '索引总数',
+    embeddingFiles: '嵌入文件',
+    recentSearches: '最近搜索',
+    similarityExplanation: '相似度分数越高表示结果越相关',
+    topResults: '相关结果',
+    resultsFound: '找到结果',
+    belowThreshold: '低于阈值',
+    
+    // 搜索参数
+    advancedSettings: '高级设置',
+    show: '显示',
+    hide: '隐藏',
+    similarityThreshold: '相似度阈值',
+    topK: '结果数量',
     
     // 侧边栏模块
     modules: '功能模块',
@@ -364,13 +419,13 @@ export const translations = {
     queryText: '查询文本',
     queryPlaceholder: '输入您的问题或查询...',
     resultCount: '返回结果数量',
-    similarityThreshold: '相似度阈值',
     minCharacters: '最小字符数',
     performSearch: '执行搜索',
     searchResults: '搜索结果',
     queryInfo: '查询信息',
     searchId: '搜索ID:',
     documentFilename: '文档:',
+    documentFromSearch: '搜索结果文档',
     documentSource: '源文档:',
     documentReference: '文档引用:',
     documentContext: '文档上下文',
@@ -461,7 +516,7 @@ export const LanguageProvider = ({ children }) => {
     setLanguage(language === 'en' ? 'zh' : 'en');
   };
   
-  const t = (key, params = {}) => {
+  const t = useCallback((key, params = {}) => {
     let text = translations[language][key] || key;
     
     // 处理参数替换
@@ -472,10 +527,16 @@ export const LanguageProvider = ({ children }) => {
     }
     
     return text;
-  };
+  }, [language]);
+  
+  const contextValue = useMemo(() => ({
+    language, 
+    toggleLanguage, 
+    t
+  }), [language, t]);
   
   return (
-    <LanguageContext.Provider value={{ language, toggleLanguage, t }}>
+    <LanguageContext.Provider value={contextValue}>
       {children}
     </LanguageContext.Provider>
   );
@@ -488,5 +549,10 @@ export const useLanguage = () => {
     throw new Error('useLanguage must be used within a LanguageProvider');
   }
   return context;
+};
+
+// Add PropTypes validation for LanguageProvider
+LanguageProvider.propTypes = {
+  children: PropTypes.node.isRequired
 };
 

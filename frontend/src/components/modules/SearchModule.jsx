@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
 
@@ -177,7 +178,10 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
             
             <div className="space-y-4">
               {searchResults.results.map((result, index) => (
-                <div key={index} className="bg-gray-50 p-4 rounded-md">
+                <div 
+                  key={`result-${result.id || result.chunk_id || result.text?.substring(0, 20) || Math.random().toString(36).substring(2, 10)}`} 
+                  className="bg-gray-50 p-4 rounded-md"
+                >
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-medium text-purple-700">#{index + 1}</span>
                     <span className="text-sm bg-purple-100 text-purple-800 px-2 py-1 rounded">
@@ -209,6 +213,23 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
     </div>
   );
 }
+
+// Add PropTypes validation
+
+SearchModule.propTypes = {
+  indices: PropTypes.array,
+  documents: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.string,
+  onSearch: PropTypes.func.isRequired
+};
+
+SearchModule.defaultProps = {
+  indices: [],
+  documents: [],
+  loading: false,
+  error: null
+};
 
 export default SearchModule;
 

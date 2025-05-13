@@ -15,9 +15,13 @@ logger = logging.getLogger(__name__)
 class GenerateService:
     """文本生成服务，支持基于检索结果的生成"""
     
-    def __init__(self, results_dir="storage/results"):
-        self.results_dir = results_dir
-        os.makedirs(results_dir, exist_ok=True)
+    def __init__(self, results_dir=os.path.join("storage", "results")):
+        # 使用绝对路径，与SearchService保持一致
+        self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+        self.results_dir = os.path.join(self.storage_dir, results_dir)
+        os.makedirs(self.results_dir, exist_ok=True)
+        # 添加日志
+        logger.debug(f"GenerateService initialized with results_dir: {self.results_dir}")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self.deepseek_api_base = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
@@ -71,9 +75,21 @@ class GenerateService:
                 raise FileNotFoundError(f"找不到ID为{search_id}的搜索结果")
             
             # 读取搜索结果
-            with open(search_file, "r", encoding="utf-8") as f:
-                search_data = json.load(f)
-                search_results = search_data.get("results", [])
+            try:
+                with open(search_file, "r", encoding="utf-8") as f:
+                    search_data = json.load(f)
+                    search_results = search_data.get("results", [])
+                    
+                logger.debug(f"Loaded search results from {search_file}: found {len(search_results)} results")
+                
+                # 检查搜索结果是否为空
+                if not search_results:
+                    query = search_data.get("query", "")
+                    document_filename = search_data.get("document_filename", "")
+                    logger.warning(f"Search ID {search_id} has no results. Query: '{query}', Document: '{document_filename}'")
+            except Exception as e:
+                logger.error(f"Error loading search results from {search_file}: {str(e)}")
+                raise ValueError(f"加载搜索结果失败: {str(e)}")
         
         # 构建上下文
         context = ""
@@ -81,6 +97,19 @@ class GenerateService:
             context = "基于以下检索结果：\n\n"
             for i, result in enumerate(search_results):
                 context += f"[{i+1}] {result.get('text', '')}\n\n"
+        elif search_id and search_data:
+            # 如果有search_id但没有搜索结果，添加有关文档的信息
+            document_id = search_data.get("document_id", "")
+            document_filename = search_data.get("document_filename", "")
+            query = search_data.get("query", "")
+            similarity_threshold = search_data.get("similarity_threshold", 0.5)
+            
+            context = f"查询未找到达到相似度阈值 ({similarity_threshold}) 的结果。\n"
+            if document_filename:
+                context += f"已搜索的文档: {document_filename}\n"
+            elif document_id:
+                context += f"已搜索的文档ID: {document_id}\n"
+            context += f"查询内容: {query}\n\n"
         
         # 构建完整提示
         full_prompt = context + prompt if context else prompt
@@ -123,10 +152,21 @@ class GenerateService:
     
     def _find_search_file(self, search_id: str) -> Optional[str]:
         """查找指定ID的搜索结果文件"""
+        logger.debug(f"Searching for search result with ID '{search_id}' in directory: {self.results_dir}")
+        
         if os.path.exists(self.results_dir):
+            logger.debug(f"Results directory exists: {self.results_dir}")
             for filename in os.listdir(self.results_dir):
+                logger.debug(f"Checking file: {filename}")
                 if search_id in filename and filename.startswith("search_") and filename.endswith(".json"):
-                    return os.path.join(self.results_dir, filename)
+                    full_path = os.path.join(self.results_dir, filename)
+                    logger.debug(f"Match found: {full_path}")
+                    return full_path
+                    
+            logger.warning(f"No search result file found for ID '{search_id}' in {self.results_dir}")
+        else:
+            logger.error(f"Results directory does not exist: {self.results_dir}")
+            
         return None
     
     def _generate_text_with_model(self, prompt: str, provider: str, model: str, temperature: float, max_tokens: int) -> str:
@@ -263,9 +303,22 @@ class GenerateService:
                 raise FileNotFoundError(f"找不到ID为{search_id}的搜索结果")
             
             # 读取搜索结果
-            with open(search_file, "r", encoding="utf-8") as f:
-                search_data = json.load(f)
-                search_results = search_data.get("results", [])
+            search_data = None
+            try:
+                with open(search_file, "r", encoding="utf-8") as f:
+                    search_data = json.load(f)
+                    search_results = search_data.get("results", [])
+                    
+                logger.debug(f"Loaded search results for streaming from {search_file}: found {len(search_results)} results")
+                
+                # 检查搜索结果是否为空
+                if not search_results:
+                    query = search_data.get("query", "")
+                    document_filename = search_data.get("document_filename", "")
+                    logger.warning(f"Stream: Search ID {search_id} has no results. Query: '{query}', Document: '{document_filename}'")
+            except Exception as e:
+                logger.error(f"Error loading search results for streaming from {search_file}: {str(e)}")
+                raise ValueError(f"加载搜索结果失败: {str(e)}")
         
         # 构建上下文
         context = ""
@@ -273,6 +326,19 @@ class GenerateService:
             context = "基于以下检索结果：\n\n"
             for i, result in enumerate(search_results):
                 context += f"[{i+1}] {result.get('text', '')}\n\n"
+        elif search_id and search_data:
+            # 如果有search_id但没有搜索结果，添加有关文档的信息
+            document_id = search_data.get("document_id", "")
+            document_filename = search_data.get("document_filename", "")
+            query = search_data.get("query", "")
+            similarity_threshold = search_data.get("similarity_threshold", 0.5)
+            
+            context = f"查询未找到达到相似度阈值 ({similarity_threshold}) 的结果。\n"
+            if document_filename:
+                context += f"已搜索的文档: {document_filename}\n"
+            elif document_id:
+                context += f"已搜索的文档ID: {document_id}\n"
+            context += f"查询内容: {query}\n\n"
         
         # 构建完整提示
         full_prompt = context + prompt if context else prompt
