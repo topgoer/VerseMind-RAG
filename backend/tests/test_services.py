@@ -62,7 +62,8 @@ class TestIndexService:
     @patch('os.makedirs')
     def test_init(self, mock_makedirs):
         service = IndexService()
-        assert service.indices_dir == "storage/indices"
+        # The path is now absolute, so we need to check the end of the path (basename) instead
+        assert os.path.basename(os.path.dirname(service.indices_dir)) == "storage" and os.path.basename(service.indices_dir) == "indices"
 
 class TestSearchService:
     """测试语义搜索服务"""
