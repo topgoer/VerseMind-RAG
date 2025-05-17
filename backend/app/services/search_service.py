@@ -5,6 +5,7 @@ import uuid
 import numpy as np
 import logging
 from typing import Dict, List, Any, Optional
+from app.core.logger import get_logger_with_env_level
 
 class SearchService:
     """语义搜索服务，支持基于向量相似度的检索"""
@@ -12,8 +13,7 @@ class SearchService:
     def __init__(self, indices_dir=os.path.join("storage", "indices"), 
                  embeddings_dir=os.path.join("backend", "04-embedded-docs"), 
                  results_dir=os.path.join("storage", "results")):
-        self.logger = logging.getLogger("SearchService")
-        self.logger.setLevel(logging.DEBUG)  # 设置为DEBUG级别以便调试
+        self.logger = get_logger_with_env_level("SearchService")
 
         # 使用绝对路径
         self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))

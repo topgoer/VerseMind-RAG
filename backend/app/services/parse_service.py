@@ -4,8 +4,12 @@ import datetime
 import uuid
 from typing import Dict, List, Any, Optional
 import re
-import logging  # added for logging
+import logging
 import pandas as pd  # added for table parsing
+from app.core.logger import get_logger_with_env_level
+
+# Initialize logger using the environment-based configuration
+logger = get_logger_with_env_level(__name__)
 
 class ParseService:
     """文档解析服务，支持全文、分页、标题结构解析"""

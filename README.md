@@ -248,6 +248,25 @@ distance_function = "cosine"  # Options: "cosine", "l2", "ip"
 
 For detailed configuration options including index types, distance metrics, and performance tuning recommendations, please refer to the [User Guide](./Temp/user_guide.md#向量数据库配置).
 
+### Logging Configuration
+
+VerseMind-RAG supports dynamic logging level configuration through environment variables, allowing you to control the verbosity of logs without modifying the code:
+
+```
+# In your .env file:
+LOG_LEVEL=INFO  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+```
+
+Available log levels:
+
+- `DEBUG`: Show all messages, including detailed debugging information
+- `INFO`: Show informational messages, warnings, and errors (default)
+- `WARNING`: Show only warnings and errors
+- `ERROR`: Show only errors
+- `CRITICAL`: Show only critical errors
+
+For more details, see [Logging Configuration](./docs/logging_configuration.md).
+
 ### Advanced Document Processing
 
 VerseMind-RAG provides flexible document processing configurations that can be adjusted to optimize for different document types and use cases.

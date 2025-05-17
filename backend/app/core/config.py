@@ -4,8 +4,9 @@ import toml
 import logging
 
 # Initialize logger for core.config
+# Import here to avoid circular imports 
+# Will be updated to use get_logger_with_env_level after settings are loaded
 logger = logging.getLogger("core.config")
-logger.setLevel(logging.INFO)
 
 # BACKEND_ROOT is d:/Github/VerseMind-RAG/backend/
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -82,4 +83,10 @@ logger.debug(f"  INDICES_DIR='{settings.INDICES_DIR}'")
 logger.debug(f"  DOCUMENTS_DIR='{settings.DOCUMENTS_DIR}'")
 logger.debug(f"  CHUNKS_DIR='{settings.CHUNKS_DIR}'")
 logger.debug(f"  PARSED_DIR='{settings.PARSED_DIR}'")
+
+# At this point, we can safely import the logger utility without circular import concerns
+from app.core.logger import get_logger_with_env_level
+
+# Update the logger to use our environment-based logging utility
+logger = get_logger_with_env_level(__name__)
 

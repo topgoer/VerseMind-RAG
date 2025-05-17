@@ -23,6 +23,38 @@ function ChatInterface({
   const [selectedImage, setSelectedImage] = useState(null); // State for selected image
   const [config, setConfig] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
+  
+  // Helper function to format timestamps safely
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    
+    try {
+      // Handle different timestamp formats
+      if (typeof timestamp === 'string') {
+        // If it's already a formatted date string (e.g. "5/16/2025, 10:30:45 AM")
+        if (timestamp.includes('/') && timestamp.includes(':')) {
+          return timestamp;
+        }
+        
+        // Try to parse as date
+        const date = new Date(timestamp);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleString();
+        }
+      }
+      
+      // If timestamp is a number (Unix timestamp)
+      if (typeof timestamp === 'number') {
+        return new Date(timestamp).toLocaleString();
+      }
+      
+      // If we couldn't parse it, return as is
+      return timestamp;
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return timestamp || '';
+    }
+  };
   // Add new states for search parameters
   const [similarityThreshold, setSimilarityThreshold] = useState(0.5);
   const [topK, setTopK] = useState(3);
@@ -320,7 +352,7 @@ function ChatInterface({
                 {message.sender === 'user' ? t('user') : (message.model || t('assistant'))}
               </span>
               <span className="mx-2">·</span>
-              <span>{message.timestamp ? new Date(message.timestamp).toLocaleString() : ''}</span>
+              <span>{formatTimestamp(message.timestamp)}</span>
               {/* 复制按钮组 */}
               <span className="ml-auto flex gap-1">
                 <button

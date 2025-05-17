@@ -248,6 +248,25 @@ distance_function = "cosine"  # 选项: "cosine", "l2", "ip"
 
 有关索引类型、距离度量和性能调优的详细配置选项，请参阅[用户指南](./docs/user_guide.md#向量数据库配置)。
 
+### 日志配置
+
+VerseMind-RAG 支持通过环境变量进行动态日志级别配置，让您在不修改代码的情况下控制日志的详细程度：
+
+```
+# 在 .env 文件中:
+LOG_LEVEL=INFO  # 选项: DEBUG, INFO, WARNING, ERROR, CRITICAL
+```
+
+可用的日志级别：
+
+- `DEBUG`：显示所有消息，包括详细的调试信息
+- `INFO`：显示信息性消息、警告和错误（默认）
+- `WARNING`：只显示警告和错误
+- `ERROR`：只显示错误
+- `CRITICAL`：只显示严重错误
+
+更多详情，请参阅[日志配置](./docs/logging_configuration.md)。
+
 ### 高级文档处理
 
 VerseMind-RAG 提供灵活的文档处理配置，可以调整以适应不同的文档类型和用例。

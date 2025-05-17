@@ -9,8 +9,10 @@ import toml
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from app.api.config import get_config_path
+from app.core.logger import get_logger_with_env_level
 
-logger = logging.getLogger(__name__)
+# Initialize logger using the environment-based configuration
+logger = get_logger_with_env_level(__name__)
 
 class GenerateService:
     """文本生成服务，支持基于检索结果的生成"""

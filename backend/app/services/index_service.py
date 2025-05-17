@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 from enum import Enum
 from pymilvus import connections, utility, Collection, DataType, FieldSchema, CollectionSchema
 from app.core.config import settings
+from app.core.logger import get_logger_with_env_level
 
 class VectorDBProvider(str, Enum):
     FAISS = "faiss"
@@ -65,8 +66,7 @@ class IndexService:
     
     def __init__(self):
         # 配置日志
-        self.logger = logging.getLogger("IndexService")
-        self.logger.setLevel(logging.INFO)
+        self.logger = get_logger_with_env_level("IndexService")
         
         # 使用settings中的配置
         self.embeddings_dir = settings.EMBEDDINGS_DIR

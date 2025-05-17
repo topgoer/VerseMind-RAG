@@ -5,8 +5,12 @@ import fitz  # PyMuPDF
 from docx import Document
 import datetime
 import uuid
-import logging  # for debugging logs
+import logging
 from pypdf import PdfReader  # added multi-library support
+from app.core.logger import get_logger_with_env_level
+
+# Initialize logger using the environment-based configuration
+logger = get_logger_with_env_level(__name__)
 
 class LoadService:
     """文档加载服务，支持PDF、DOCX、TXT、Markdown格式"""

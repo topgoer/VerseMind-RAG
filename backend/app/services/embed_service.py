@@ -12,10 +12,10 @@ import dotenv
 dotenv.load_dotenv()
 from enum import Enum
 import boto3
+from app.core.logger import get_logger_with_env_level
 
-# Initialize logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Set to INFO to only show important messages
+# Initialize logger using the environment-based configuration
+logger = get_logger_with_env_level(__name__)
 
 # 新增：嵌入提供商枚举
 class EmbeddingProvider(str, Enum):

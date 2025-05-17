@@ -3,9 +3,24 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import sys
+from dotenv import load_dotenv
 
-# 设置基本日志配置
-logging.basicConfig(level=logging.DEBUG)  # 设置日志级别为DEBUG以便调试
+# Load environment variables from .env file
+load_dotenv()
+
+# Set up logging based on environment variable
+log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
+log_level_map = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+log_level = log_level_map.get(log_level_str, logging.INFO)
+
+logging.basicConfig(level=log_level)
+logging.info(f"Logging level set to: {log_level_str}")
 
 # 创建一个将标准输出重定向到日志系统的处理程序
 class PrintToLogger:
