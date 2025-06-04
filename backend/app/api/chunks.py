@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Body, Depends, Query
-from typing import Dict, List, Optional
+from fastapi import APIRouter, HTTPException, Body, Query
+from typing import Optional
 import os
 import logging
 
@@ -11,12 +11,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 chunk_service = ChunkService()
 
+
 @router.post("/create")
 async def create_chunks(
     document_id: str = Body(...),
     strategy: str = Body(...),
     chunk_size: int = Body(1000),
-    overlap: int = Body(200)
+    overlap: int = Body(200),
 ):
     """
     根据指定策略将文档分块
@@ -31,6 +32,7 @@ async def create_chunks(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"分块处理失败: {str(e)}")
 
+
 @router.get("/{document_id}")
 async def get_document_chunks(document_id: str):
     """
@@ -41,6 +43,7 @@ async def get_document_chunks(document_id: str):
     if not chunks:
         return []
     return chunks
+
 
 @router.delete("/{chunk_id}")
 async def delete_chunk_result(chunk_id: str):
@@ -54,7 +57,8 @@ async def delete_chunk_result(chunk_id: str):
         raise HTTPException(status_code=404, detail=f"Chunk result file not found for id: {chunk_id}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete chunk result: {str(e)}")
-        
+
+
 @router.get("/list")
 async def list_all_chunks(document_id: Optional[str] = Query(None)):
     """
@@ -68,17 +72,20 @@ async def list_all_chunks(document_id: Optional[str] = Query(None)):
             logger.info(f"[list_all_chunks] Files in chunks directory: {files_in_dir}")
         else:
             logger.warning(f"[list_all_chunks] Chunks directory doesn't exist: {chunks_dir}")
-            
+
         # Get chunks from service
         chunks = chunk_service.get_document_chunks(document_id or "")
-        
+
         logger.info(f"[list_all_chunks] Found {len(chunks)} chunks for document_id: '{document_id or 'All'}'")
         if chunks:
             for i, chunk in enumerate(chunks[:3]):  # Log first 3 chunks
-                logger.info(f"[list_all_chunks] Chunk {i+1}: id={chunk.get('id')}, document_id={chunk.get('document_id')}, document_name={chunk.get('document_name')}")
-        
+                logger.info(
+                    f"[list_all_chunks] Chunk {i+1}: id={chunk.get('id')}, document_id={chunk.get('document_id')}, document_name={chunk.get('document_name')}"
+                )
+
         return chunks
     except Exception as e:
         import traceback
+
         logger.error(f"[list_all_chunks] Error: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to list chunks: {str(e)}")
