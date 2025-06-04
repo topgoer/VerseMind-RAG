@@ -1,3 +1,5 @@
+[![CI](https://github.com/topgoer/VerseMind-RAG/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/topgoer/VerseMind-RAG/actions/workflows/ci.yml)
+
 # VerseMind-RAG
 
 **Where Poetry Meets AI**
