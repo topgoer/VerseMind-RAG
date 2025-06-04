@@ -1,3 +1,5 @@
+[![CI](https://github.com/topgoer/VerseMind-RAG/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/topgoer/VerseMind-RAG/actions/workflows/ci.yml)
+
 # VerseMind-RAG Configuration Guide
 
 ## Overview
@@ -189,3 +191,7 @@ default_language = "en"
 
 ## Example Template
 See `config/config.example.toml` for a ready-to-copy template.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

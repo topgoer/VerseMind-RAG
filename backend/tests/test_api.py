@@ -34,6 +34,6 @@ def test_generation_models():
 
 def test_indices_list():
     """测试索引列表接口"""
-    response = client.get("/api/index/list")
+    response = client.get("/api/indices/list")
     assert response.status_code == 200
     assert isinstance(response.json(), list)

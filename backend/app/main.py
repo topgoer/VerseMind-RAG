@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import sys
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 # Load environment variables from .env file
 load_dotenv()
@@ -66,16 +67,9 @@ logging.getLogger("SearchService").setLevel(logging.WARNING)  # Changed from INF
 from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api, debug
 from app.api import debug_storage, mcp, health
 
-# 创建FastAPI应用
-app = FastAPI(
-    title="VerseMind-RAG API",
-    description="Where Poetry Meets AI - 检索增强生成系统API",
-    version="0.2.0"
-)
-
-@app.on_event("startup")
-async def startup_event():
-    # 如果配置启用了MCP服务器，则在后台启动它
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
     if ENABLE_MCP_SERVER:
         try:
             from app.mcp import start_mcp_server
@@ -89,35 +83,61 @@ async def startup_event():
             logging.error(f"Error starting MCP server: {e}")
             import traceback
             logging.error(traceback.format_exc())
-    # 定义所有必要的目录路径 - 保持唯一性
-    required_dirs = [
-        # 原始文档
-        "storage/documents",
-        # 数据处理流程目录
-        "backend/01-loaded_docs",
-        "backend/02-chunked-docs", 
-        "backend/03-parsed-docs",
-        "backend/04-embedded-docs",
-        # 索引与结果存储
-        "backend/storage/indices",
-        "backend/storage/results"
-    ]
-    
-    # 创建所有必要的目录
-    for dir_path in required_dirs:
-        try:
-            os.makedirs(dir_path, exist_ok=True)
-        except Exception as e:
-            logging.error(f"[startup] Failed to create directory: {dir_path}. Error: {e}")
 
-    # Suppress unnecessary logs unless there is an error
-    if logging.getLogger().isEnabledFor(logging.DEBUG):
-        logging.debug("[core.config]: Initialized settings. Effective paths:")
-        logging.debug("  EMBEDDINGS_DIR='%s'", os.getenv('EMBEDDINGS_DIR', 'backend/04-embedded-docs'))
-        logging.debug("  INDICES_DIR='%s'", os.getenv('INDICES_DIR', 'backend/storage/indices'))
-        logging.debug("  DOCUMENTS_DIR='%s'", os.getenv('DOCUMENTS_DIR', 'backend/01-loaded_docs'))
-        logging.debug("  CHUNKS_DIR='%s'", os.getenv('CHUNKS_DIR', 'backend/02-chunked-docs'))
-        logging.debug("  PARSED_DIR='%s'", os.getenv('PARSED_DIR', 'backend/03-parsed-docs'))
+    yield
+
+    # Shutdown logic
+    if ENABLE_MCP_SERVER:
+        try:
+            from app.mcp import stop_mcp_server
+            logging.info("Stopping MCP server...")
+            success = stop_mcp_server()
+            if success:
+                logging.info("MCP server stopped")
+            else:
+                logging.warning("Failed to stop MCP server")
+        except Exception as e:
+            logging.error(f"Error stopping MCP server: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
+
+# 创建FastAPI应用
+app = FastAPI(
+    title="VerseMind-RAG API",
+    description="Where Poetry Meets AI - 检索增强生成系统API",
+    version="0.2.0",
+    lifespan=lifespan
+)
+
+# 定义所有必要的目录路径 - 保持唯一性
+required_dirs = [
+    # 原始文档
+    "storage/documents",
+    # 数据处理流程目录
+    "backend/01-loaded_docs",
+    "backend/02-chunked-docs", 
+    "backend/03-parsed-docs",
+    "backend/04-embedded-docs",
+    # 索引与结果存储
+    "backend/storage/indices",
+    "backend/storage/results"
+]
+
+# 创建所有必要的目录
+for dir_path in required_dirs:
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+    except Exception as e:
+        logging.error(f"[startup] Failed to create directory: {dir_path}. Error: {e}")
+
+# Suppress unnecessary logs unless there is an error
+if logging.getLogger().isEnabledFor(logging.DEBUG):
+    logging.debug("[core.config]: Initialized settings. Effective paths:")
+    logging.debug("  EMBEDDINGS_DIR='%s'", os.getenv('EMBEDDINGS_DIR', 'backend/04-embedded-docs'))
+    logging.debug("  INDICES_DIR='%s'", os.getenv('INDICES_DIR', 'backend/storage/indices'))
+    logging.debug("  DOCUMENTS_DIR='%s'", os.getenv('DOCUMENTS_DIR', 'backend/01-loaded_docs'))
+    logging.debug("  CHUNKS_DIR='%s'", os.getenv('CHUNKS_DIR', 'backend/02-chunked-docs'))
+    logging.debug("  PARSED_DIR='%s'", os.getenv('PARSED_DIR', 'backend/03-parsed-docs'))
 
 # 配置CORS
 app.add_middleware(
@@ -150,23 +170,6 @@ app.include_router(api_router, prefix="/api")
 app.include_router(config_api.router, prefix="/api")
 app.include_router(health.router, prefix="/api/health")
 # Note: index, embeddings, and search routers are already included in api_router above
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """清理资源并关闭MCP服务器."""
-    if ENABLE_MCP_SERVER:
-        try:
-            from app.mcp import stop_mcp_server
-            logging.info("Stopping MCP server...")
-            success = stop_mcp_server()
-            if success:
-                logging.info("MCP server stopped")
-            else:
-                logging.warning("Failed to stop MCP server")
-        except Exception as e:
-            logging.error(f"Error stopping MCP server: {e}")
-            import traceback
-            logging.error(traceback.format_exc())
 
 # 根路由
 @app.get("/")
