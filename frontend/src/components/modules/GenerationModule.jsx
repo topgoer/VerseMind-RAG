@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
 
@@ -11,7 +12,6 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
   const [config, setConfig] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [generationResult, setGenerationResult] = useState(null);
-  const [currentSearchResults, setCurrentSearchResults] = useState(null); // To hold search results before generation
 
   // 加载配置
   useEffect(() => {
@@ -22,12 +22,12 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
       setConfigLoading(false);
       
       // 设置默认值 - 使用 model_groups
-      if (configData && configData.model_groups) {
+      if (configData?.model_groups) {
         const availableProviders = Object.keys(configData.model_groups);
         if (availableProviders.length > 0) {
           const defaultProvider = availableProviders[0];
           setProvider(defaultProvider);
-          if (configData.model_groups[defaultProvider] && configData.model_groups[defaultProvider].length > 0) {
+          if (configData.model_groups[defaultProvider]?.length > 0) {
             setModel(configData.model_groups[defaultProvider][0].id);
           }
         }
@@ -43,7 +43,7 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
     setProvider(newProvider);
     
     // 当提供商变更时，选择该提供商的第一个聊天模型
-    if (config && config.model_groups && config.model_groups[newProvider] && config.model_groups[newProvider].length > 0) {
+    if (config?.model_groups?.[newProvider]?.length > 0) {
       setModel(config.model_groups[newProvider][0].id);
     } else {
       setModel(''); // Reset model if provider has no models
@@ -56,11 +56,11 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
     if (!selectedIndex || !provider || !model || !prompt.trim()) return;
     
     try {
-      // Step 1: Perform search using the selected index and prompt
+      // Now selectedIndex can be either a collection name or an index ID
+      // The onSearch function should handle it appropriately
       const searchResult = await onSearch(selectedIndex, prompt, 3, 0.7); // Use default topK=3, threshold=0.7 for context
-      setCurrentSearchResults(searchResult); // Store search results
 
-      if (searchResult && searchResult.search_id) {
+      if (searchResult?.search_id) {
         // Step 2: Generate text using the search results
         const result = await onGenerateText(searchResult.search_id, prompt, provider, model);
         setGenerationResult(result);
@@ -85,6 +85,40 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
       default: return providerId;
     }
   };
+  
+  // 渲染提供商选项
+  const renderProviderOptions = () => {
+    if (configLoading) {
+      return <option>{t('loadingConfig')}...</option>;
+    }
+    
+    if (config?.model_groups) {
+      return Object.keys(config.model_groups).map((providerId) => (
+        <option key={providerId} value={providerId}>
+          {getProviderDisplayName(providerId)}
+        </option>
+      ));
+    }
+    
+    return <option value="">{t('noProvidersConfigured')}</option>;
+  };
+  
+  // 渲染模型选项
+  const renderModelOptions = () => {
+    if (configLoading) {
+      return <option>{t('loadingConfig')}...</option>;
+    }
+    
+    if (config?.model_groups?.[provider]?.length > 0) {
+      return config.model_groups[provider].map((modelInfo) => (
+        <option key={modelInfo.id} value={modelInfo.id}>
+          {modelInfo.id}
+        </option>
+      ));
+    }
+    
+    return <option value="">{provider ? t('noModelsForProvider') : t('selectProviderFirst')}</option>;
+  };
 
   return (
     <div className="space-y-6">
@@ -93,10 +127,10 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
         <p className="text-gray-600 mb-6">{t('generationDesc')}</p>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Index Selection Dropdown */}
+          {/* Collection Selection Dropdown */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('selectIndex')}
+              {t('selectCollection')}
             </label>
             <select
               value={selectedIndex}
@@ -105,17 +139,26 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
               required
               disabled={!Array.isArray(indices) || indices.length === 0}
             >
-              <option value="">{!Array.isArray(indices) || indices.length === 0 ? t('noIndicesAvailable') : t('selectIndex')}</option>
-              {Array.isArray(indices) && Array.isArray(documents) && indices.map((idx) => {
-                const doc = documents.find(d => d.id === idx.document_id);
-                const displayName = doc ? doc.filename : idx.document_id;
-                const indexTypeName = config?.vector_databases?.[idx.vector_db]?.name || idx.vector_db;
-                return (
-                  <option key={idx.index_id} value={idx.index_id}>
-                    {displayName} ({t('indexType')}: {indexTypeName}, ID: {idx.index_id})
+              <option value="">{!Array.isArray(indices) || indices.length === 0 ? t('noIndicesAvailable') : t('indexOrCollectionPlaceholder')}</option>
+              
+              {/* Collection Options */}
+              {Array.isArray(indices) && 
+                Object.entries(indices.reduce((collections, idx) => {
+                  if (typeof idx === 'object' && idx !== null) {
+                    const collName = idx.collection_name || t('default', 'default');
+                    if (!collections[collName]) collections[collName] = [];
+                    collections[collName].push(idx);
+                  }
+                  return collections;
+                }, {})).map(([collectionName, collIndices]) => (
+                  <option 
+                    key={`collection-${collectionName}`}
+                    value={collectionName}
+                  >
+                    📁 {collectionName} ({collIndices.length} {t('indices', 'indices')})
                   </option>
-                );
-              })}
+                ))
+              }
             </select>
           </div>
 
@@ -131,17 +174,7 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
                 disabled={configLoading}
               >
-                {configLoading ? (
-                  <option>{t('loadingConfig')}...</option>
-                ) : config && config.model_groups ? (
-                  Object.keys(config.model_groups).map((providerId) => (
-                    <option key={providerId} value={providerId}>
-                      {getProviderDisplayName(providerId)}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">{t('noProvidersConfigured')}</option>
-                )}
+                {renderProviderOptions()}
               </select>
             </div>
             
@@ -155,17 +188,7 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
                 disabled={configLoading || !provider}
               >
-                {configLoading ? (
-                  <option>{t('loadingConfig')}...</option>
-                ) : config && config.model_groups && config.model_groups[provider] && config.model_groups[provider].length > 0 ? (
-                  config.model_groups[provider].map((modelInfo) => (
-                    <option key={modelInfo.id} value={modelInfo.id}>
-                      {modelInfo.id} {/* Display the full ID */}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">{provider ? t('noModelsForProvider') : t('selectProviderFirst')}</option>
-                )}
+                {renderModelOptions()}
               </select>
             </div>
           </div>
@@ -230,6 +253,16 @@ function GenerationModule({ indices = [], documents = [], loading, error, onGene
     </div>
   );
 }
+
+// Add prop validation
+GenerationModule.propTypes = {
+  indices: PropTypes.array,
+  documents: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
+  onGenerateText: PropTypes.func.isRequired,
+  onSearch: PropTypes.func.isRequired
+};
 
 export default GenerationModule;
 

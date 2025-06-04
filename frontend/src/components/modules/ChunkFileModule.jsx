@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 function ChunkFileModule({ 
@@ -17,21 +18,27 @@ function ChunkFileModule({
   const [overlap, setOverlap] = useState(200);
 
   useEffect(() => {
+    // Log for debugging
+    // console.log('[ChunkFileModule] Documents available:', documents?.length || 0);
+    // console.log('[ChunkFileModule] Selected document:', selectedDocumentObject);
+    
     if (!selectedDocumentObject && documents && documents.length > 0 && onDocumentSelect) {
-      // Optionally auto-select the first document
+      // Auto-select the first document
+      // console.log('[ChunkFileModule] Auto-selecting first document:', documents[0].id);
+      onDocumentSelect(documents[0].id);
     }
   }, [selectedDocumentObject, documents, onDocumentSelect]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!selectedDocumentObject || !selectedDocumentObject.id) {
+    if (!selectedDocumentObject?.id) {
       console.warn("Submit prevented: No document selected via props.");
       return;
     }
     if (typeof onChunkDocument === 'function') {
       onChunkDocument(selectedDocumentObject.id, strategy, chunkSize, overlap)
         .then((result) => {
-          console.log('分块成功:', result);
+          // console.log('分块成功:', result);
         })
         .catch((err) => {
           console.error('分块失败:', err);
@@ -57,8 +64,11 @@ function ChunkFileModule({
             <select
               value={selectedDocumentObject?.id || ''}
               onChange={(e) => {
+                const docId = e.target.value;
+                // console.log(`[ChunkFileModule] Selected document ID from dropdown: ${docId}`);
+                
                 if (typeof onDocumentSelect === 'function') {
-                  onDocumentSelect(e.target.value);
+                  onDocumentSelect(docId);
                 } else {
                   console.error("onDocumentSelect prop is not a function. Received:", onDocumentSelect);
                 }
@@ -66,12 +76,18 @@ function ChunkFileModule({
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
               required
             >
-              <option value="">{t('selectDocumentPrompt')}</option>
-              {documents.map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  {doc.filename}
+              <option value="">{t('selectDocument')}</option>
+              {documents && documents.length > 0 ? (
+                documents.map((doc) => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.filename}
+                  </option>
+                ))
+              ) : (
+                <option disabled value="">
+                  {t('noDocuments')}
                 </option>
-              ))}
+              )}
             </select>
           </div>
           
@@ -168,15 +184,24 @@ function ChunkFileModule({
                 <tbody className="bg-white divide-y divide-gray-200">
                   {Array.isArray(chunks) && chunks.map((chunk) => {
                     const doc = Array.isArray(documents) ? documents.find(d => d.id === chunk.document_id) : null;
+                    // Determine the best name to display
+                    const displayName = chunk.document_name || (doc ? doc.filename : chunk.document_id);
+                    // console.log(`[ChunkFileModule] Chunk display info: id=${chunk.id}, document_name=${chunk.document_name}, document_id=${chunk.document_id}`);
+                    
                     return (
                       <tr key={chunk.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-medium text-gray-900">{doc ? doc.filename : chunk.document_id}</span>
+                          <span className="font-medium text-gray-900">{displayName}</span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                          {chunk.strategy === 'char_count' ? t('byCharacter') : 
-                           chunk.strategy === 'paragraph' ? t('byParagraph') : 
-                           chunk.strategy === 'heading' ? t('byHeading') : chunk.strategy}
+                          {(() => {
+                            switch(chunk.strategy) {
+                              case 'char_count': return t('byCharacter');
+                              case 'paragraph': return t('byParagraph');
+                              case 'heading': return t('byHeading');
+                              default: return chunk.strategy;
+                            }
+                          })()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-500">
                           {chunk.chunk_size || 'N/A'}
@@ -221,6 +246,42 @@ function ChunkFileModule({
     </div>
   );
 }
+
+// Add PropTypes validation for component props
+ChunkFileModule.propTypes = {
+  documents: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      filename: PropTypes.string.isRequired
+    })
+  ),
+  chunks: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string,
+      document_id: PropTypes.string,
+      chunk_index: PropTypes.number,
+      text: PropTypes.string,
+      metadata: PropTypes.object
+    })
+  ),
+  loading: PropTypes.bool,
+  error: PropTypes.string,
+  onChunkDocument: PropTypes.func,
+  onChunkDelete: PropTypes.func,
+  selectedDocumentObject: PropTypes.shape({
+    id: PropTypes.string,
+    filename: PropTypes.string
+  }),
+  onDocumentSelect: PropTypes.func
+};
+
+// Add default props
+ChunkFileModule.defaultProps = {
+  documents: [],
+  chunks: [],
+  loading: false,
+  error: null
+};
 
 export default ChunkFileModule;
 

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
 
-function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCreateEmbeddings, onEmbeddingDelete, globalSelectedDocument, onLoadEmbeddings }) {
+function EmbeddingFileModule({ documents, chunks = [], embeddings = [], loading, error, onCreateEmbeddings, onEmbeddingDelete, globalSelectedDocument, onLoadEmbeddings }) {
   const { t } = useLanguage();
   const [selectedDocument, setSelectedDocument] = useState('');
   const [provider, setProvider] = useState(''); // Initialize empty
@@ -11,6 +12,29 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
   const [configLoading, setConfigLoading] = useState(true);
   const [embeddingResult, setEmbeddingResult] = useState(null); // Keep track of the last result for display
   const [filteredEmbeddings, setFilteredEmbeddings] = useState([]);
+  const [chunkedDocuments, setChunkedDocuments] = useState([]);
+
+  // Filter documents to show only those that have been chunked
+  useEffect(() => {
+    if (!Array.isArray(chunks) || !Array.isArray(documents)) {
+      setChunkedDocuments([]);
+      return;
+    }
+
+    // Extract unique document IDs from chunks
+    const chunkedDocumentIds = [...new Set(chunks.map(chunk => chunk.document_id))];
+    
+    // Filter the documents array to only include documents that have chunks
+    const filteredDocuments = documents.filter(doc => chunkedDocumentIds.includes(doc.id));
+    
+    // console.log(`[EmbeddingFileModule] Filtered ${filteredDocuments.length} chunked documents out of ${documents.length} total documents`);
+    setChunkedDocuments(filteredDocuments);
+    
+    // If the currently selected document is not in the filtered list, reset selection
+    if (selectedDocument && !chunkedDocumentIds.includes(selectedDocument)) {
+      setSelectedDocument('');
+    }
+  }, [chunks, documents, selectedDocument]);
 
   // 加载配置 - 使用缓存版本
   useEffect(() => {
@@ -50,27 +74,62 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
   }, [globalSelectedDocument]);
 
   // Reload embeddings when document selection changes
+  const isInitialMount = useRef(true);
+  const lastSelectedDocument = useRef('');
+  
   useEffect(() => {
-    if (selectedDocument && onLoadEmbeddings) {
+    if (isInitialMount.current) {
+      // Skip the first execution of this effect
+      isInitialMount.current = false;
+      lastSelectedDocument.current = selectedDocument;
+      return;
+    }
+    
+    // Only reload if the selected document has actually changed
+    // This prevents the deadloop when empty embeddings are returned
+    if (selectedDocument && 
+        selectedDocument !== lastSelectedDocument.current && 
+        onLoadEmbeddings) {
+      // Update last selected document
+      lastSelectedDocument.current = selectedDocument;
+      
       // Reload embeddings when a document is selected to ensure we have the latest data
+      // console.log(`[EmbeddingFileModule] Loading embeddings for document ${selectedDocument}`);
       onLoadEmbeddings();
     }
   }, [selectedDocument, onLoadEmbeddings]);
 
   // Filter embeddings when selectedDocument or embeddings change
   useEffect(() => {
-    if (embeddings && embeddings.length > 0) {
-      if (selectedDocument) {
-        const filtered = embeddings.filter(embed => embed.document_id === selectedDocument);
-        setFilteredEmbeddings(filtered);
-        console.log(`Filtered ${filtered.length} embeddings for document ID ${selectedDocument}`);
-      } else {
-        setFilteredEmbeddings(embeddings);
-        console.log(`Showing all ${embeddings.length} embeddings - no document selected`);
+    try {
+      // Safety check for embeddings array
+      if (!Array.isArray(embeddings)) {
+        console.warn('[EmbeddingFileModule] Embeddings data is not an array');
+        setFilteredEmbeddings([]);
+        return;
       }
-    } else {
+      
+      if (embeddings.length > 0) {
+        if (selectedDocument) {
+          // Make sure we only filter on valid document_id and use proper type checking
+          const filtered = embeddings.filter(embed => 
+            embed && 
+            typeof embed === 'object' && 
+            embed.document_id === selectedDocument
+          );
+          setFilteredEmbeddings(filtered);
+          // console.log(`[EmbeddingFileModule] Filtered ${filtered.length} embeddings for document ID ${selectedDocument}`);
+        } else {
+          setFilteredEmbeddings(embeddings);
+          // console.log(`[EmbeddingFileModule] Showing all ${embeddings.length} embeddings - no document selected`);
+        }
+      } else {
+        setFilteredEmbeddings([]);
+        // console.log('[EmbeddingFileModule] No embeddings available to filter (empty array)');
+      }
+    } catch (error) {
+      console.error('[EmbeddingFileModule] Error filtering embeddings:', error);
       setFilteredEmbeddings([]);
-      console.log('No embeddings available to filter');
     }
   }, [selectedDocument, embeddings]);
 
@@ -123,6 +182,12 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
         <h2 className="text-xl font-semibold mb-4">{t('vectorEmbedding')}</h2>
         <p className="text-gray-600 mb-6">{t('embeddingDesc')}</p>
         
+        {chunkedDocuments.length === 0 && (
+          <div className="p-4 mb-4 text-sm text-amber-700 bg-amber-100 rounded-lg" role="alert">
+            <span className="font-medium">{t('info') || 'Info'}:</span> {t('noChunkedDocumentsAlert') || 'You need to chunk documents before creating embeddings. Please go to the chunking module first and process your documents.'}
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -133,12 +198,12 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
               onChange={handleDocumentChange}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
               required
-              disabled={documents.length === 0}
+              disabled={chunkedDocuments.length === 0}
             >
-              <option value="">{documents.length === 0 ? t('noDocumentsLoaded') : t('selectDocument')}</option>
-              {documents.map((doc) => (
+              <option value="">{chunkedDocuments.length === 0 ? t('noChunkedDocuments') || 'No chunked documents available. Please chunk documents first.' : t('selectDocument')}</option>
+              {chunkedDocuments.map((doc) => (
                 <option key={doc.id} value={doc.id}>
-                  {doc.filename} ({doc.title})
+                  {doc.filename} {doc.title ? `(${doc.title})` : ''}
                 </option>
               ))}
             </select>
@@ -259,7 +324,7 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('embeddingModel')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('dimensions')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('vectorCount')}</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -305,6 +370,26 @@ function EmbeddingFileModule({ documents, embeddings = [], loading, error, onCre
     </div>
   );
 }
+
+EmbeddingFileModule.propTypes = {
+  documents: PropTypes.array.isRequired,
+  chunks: PropTypes.array,
+  embeddings: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.string,
+  onCreateEmbeddings: PropTypes.func.isRequired,
+  onEmbeddingDelete: PropTypes.func,
+  globalSelectedDocument: PropTypes.object,
+  onLoadEmbeddings: PropTypes.func
+};
+
+EmbeddingFileModule.defaultProps = {
+  documents: [],
+  chunks: [],
+  embeddings: [],
+  loading: false,
+  error: null
+};
 
 export default EmbeddingFileModule;
 

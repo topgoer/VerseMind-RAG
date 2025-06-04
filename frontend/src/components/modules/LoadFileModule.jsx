@@ -18,11 +18,13 @@ function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumen
 
   const handleDelete = async (documentId) => {
     try {
+      // console.log(`[LoadFileModule] Attempting to delete document with ID: ${documentId}`);
       await onDocumentDelete(documentId);
+      // console.log(`[LoadFileModule] Document deletion successful for ID: ${documentId}`);
       // Optionally, trigger a refresh or handle UI update here if not handled by parent
     } catch (err) {
-      // Error is likely already handled and displayed by App.jsx
-      // console.error('Deletion failed in LoadFileModule:', err);
+      console.error(`[LoadFileModule] Document deletion failed:`, err);
+      // Error is already handled and displayed by App.jsx
     }
   };
 
@@ -70,7 +72,12 @@ function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumen
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">{t('documentList')}</h2>
           <button 
-            onClick={onRefresh} 
+            onClick={() => {
+              // console.log('[LoadFileModule] Refreshing document list...');
+              onRefresh().catch(err => {
+                console.error('[LoadFileModule] Error refreshing document list:', err);
+              });
+            }} 
             className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
             disabled={loading}
           >
@@ -82,10 +89,10 @@ function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumen
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('fileName')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('type')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('size')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('fileType')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('fileSize')}</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('uploadTime')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('pages')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('pageCount')}</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('actions')}</th>
               </tr>
             </thead>

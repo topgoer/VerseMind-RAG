@@ -6,12 +6,21 @@ const processSearchResults = (searchResults) => {
   
   // Try to use the global object first for most accurate and consistent data
   try {
-    if (typeof window !== 'undefined' && 
-        window.verseMindCurrentSearchResults && 
-        window.verseMindCurrentSearchResults.search_id === searchResults?.search_id) {
-      console.log("Using global search results object for consistency", window.verseMindCurrentSearchResults);
-      if (Array.isArray(window.verseMindCurrentSearchResults.results)) {
-        topResults = window.verseMindCurrentSearchResults.results;
+    if (typeof window !== 'undefined' && window.verseMindCurrentSearchResults) {
+      // Check for matching search ID
+      if (window.verseMindCurrentSearchResults.search_id === searchResults?.search_id) {
+        // console.log("Using global search results object for consistency (matching search_id)", window.verseMindCurrentSearchResults);
+        if (Array.isArray(window.verseMindCurrentSearchResults.results)) {
+          topResults = window.verseMindCurrentSearchResults.results;
+        }
+      }
+      // For collection searches, also check collection name
+      else if (window.verseMindCurrentSearchResults.collection_name && 
+               window.verseMindCurrentSearchResults.collection_name === searchResults?.collection_name) {
+        // console.log("Using global search results object for consistency (matching collection)", window.verseMindCurrentSearchResults);
+        if (Array.isArray(window.verseMindCurrentSearchResults.results)) {
+          topResults = window.verseMindCurrentSearchResults.results;
+        }
       }
     }
   } catch (err) {
@@ -29,7 +38,7 @@ const processSearchResults = (searchResults) => {
         topResults = Object.values(searchResults.results);
       }
     } else if (searchResults?.query) {
-      console.log("Search has query but no results array, checking for raw similarities data");
+      // console.log("Search has query but no results array, checking for raw similarities data");
       // Try to parse similarities from raw search data - sometimes it's stored differently
       if (searchResults.similarities) {
         // Convert similarities array to results array
@@ -40,26 +49,30 @@ const processSearchResults = (searchResults) => {
             id: `result-${idx}`
           })) : [];
         
-        console.log("Reconstructed results from similarities:", topResults);
+        // console.log("Reconstructed results from similarities:", topResults);
       }
     }
   }
-  
-  // Additional logging to help debug
-  console.log("Results before processing:", {
+    // Additional logging to help debug
+  /*console.log("Results before processing:", {
     resultsAvailable: !!searchResults?.results,
     resultsType: searchResults?.results ? typeof searchResults.results : 'undefined',
     isArray: Array.isArray(searchResults?.results),
     rawResults: searchResults?.results,
     topResultsLength: topResults.length,
     usingGlobalObject: topResults === window?.verseMindCurrentSearchResults?.results
-  });
+  });*/
   
   // Ensure each result has a numeric similarity value
   topResults = topResults.map(result => ({
     ...result,
     similarity: parseFloat(result.similarity || 0)
   }));
+    // Log top 3 similarities to make sure they match what's shown in the chat interface
+  if (topResults.length > 0) {
+    const topSimilarities = topResults.slice(0, 3).map(r => r.similarity.toFixed(4));
+    // console.log("Top 3 similarities for display: ", topSimilarities.join(", "));
+  }
   
   // Sort by similarity score in descending order (highest first)
   return [...topResults].sort((a, b) => b.similarity - a.similarity);
@@ -90,14 +103,13 @@ const determineThreshold = (searchResults, storageInfo) => {
   } else if (storageInfo?.similarity_threshold !== undefined) {
     actualThreshold = safeParseFloat(storageInfo.similarity_threshold, actualThreshold);
   }
-  
-  // Log the result to help debug
-  console.log("Threshold determined:", {
+    // Log the result to help debug
+  /*console.log("Threshold determined:", {
     result: actualThreshold,
     from_search_results: searchResults?.similarity_threshold,
     from_storage_current: storageInfo?.current_threshold,
     from_storage_similarity: storageInfo?.similarity_threshold
-  });
+  });*/
   
   return actualThreshold;
 };
@@ -109,9 +121,8 @@ const processSimilitarityArrays = (searchResults) => {
   
   // Ensure document filename is proper utf-8 text
   if (searchResults.document_filename) {
-    try {
-      // Log the raw document filename for debugging
-      console.log("Raw document filename:", searchResults.document_filename);
+    try {      // Log the raw document filename for debugging
+      // console.log("Raw document filename:", searchResults.document_filename);
       
       // For Chinese/Japanese/Korean characters, make sure we handle them properly
       const originalFilename = searchResults.document_filename;
@@ -119,7 +130,7 @@ const processSimilitarityArrays = (searchResults) => {
       
       // Don't try to encode/decode if it might corrupt CJK characters
       if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/.test(originalFilename)) {
-        console.log("Document contains CJK characters, preserving original encoding");
+        // console.log("Document contains CJK characters, preserving original encoding");
       } else {
         // For non-CJK text, try to fix encoding issues
         try {
@@ -139,9 +150,8 @@ const processSimilitarityArrays = (searchResults) => {
   // Create results array from similarities and texts arrays if necessary
   if (searchResults.similarities && Array.isArray(searchResults.similarities) && 
       searchResults.texts && Array.isArray(searchResults.texts) && 
-      (!searchResults.results || searchResults.results.length === 0)) {
-    
-    console.log("Creating results array from similarities and texts arrays");
+      (!searchResults.results || searchResults.results.length === 0)) {    
+    // console.log("Creating results array from similarities and texts arrays");
     searchResults.results = searchResults.similarities.map((similarity, index) => ({
       similarity: similarity,
       text: searchResults.texts[index] || `Result ${index+1}`,
@@ -155,6 +165,70 @@ const processSimilitarityArrays = (searchResults) => {
   }
   
   return searchResults;
+};  // Helper to get document name
+const getDocumentDisplayName = (searchResults, t, indexId) => {
+  // If searchResults is null or undefined but we have an indexId, create a minimal object
+  if (!searchResults && indexId) {
+    searchResults = { index_id: indexId };
+  } else if (!searchResults) {
+    return '';
+  }
+  
+  // Special formatting for document context display
+  const prefix = searchResults?.using_document_context ? `**[${t('usingDocumentContext')}]** ${t('documentFilename')} ` : '';
+  // Direct collection display has highest priority
+  if (searchResults?.collection_name) {
+    const docCount = searchResults?.indices?.length || 0;
+    if (docCount > 1) {
+      return `${prefix}${t('collectionName')}: ${searchResults.collection_name} (${docCount} ${t('documentsInCollection')})`;
+    }
+    return `${prefix}${t('collectionName')}: ${searchResults.collection_name}`;
+  }
+  
+  // Check for collection_display_name set by App.jsx
+  if (searchResults?.collection_display_name) {
+    return `${prefix}${searchResults.collection_display_name}`;
+  }
+  
+  // Next check if we have collection information in search_info
+  if (searchResults?.search_info?.collection_info) {
+    const collectionInfo = searchResults.search_info.collection_info;
+    
+    // If we have a collection with multiple documents
+    if (collectionInfo.document_ids && collectionInfo.document_ids.length > 1) {
+      return `${prefix}${searchResults.collection_display_name || 
+             `${t('collectionName')}: ${collectionInfo.collection_name} (${collectionInfo.document_ids.length} ${t('documentsInCollection')})`}`;
+    }
+    
+    // If we have a collection with one document
+    if (collectionInfo.document_filenames && collectionInfo.document_filenames.length === 1) {
+      return `${prefix}${collectionInfo.document_filenames[0]}`;
+    }
+  }
+    // Fall back to the standard document_filename
+  let docName = searchResults?.document_filename || searchResults?.search_info?.document_filename || '';
+  
+  // If we have a document_id that's not the same as the indexId, use it
+  if (!docName && searchResults?.document_id && searchResults.document_id !== indexId) {
+    docName = searchResults.document_id;
+  }
+  
+  // If there's no document name but we have a search ID, display it
+  if (!docName && searchResults?.search_id) {
+    return `${prefix}${t('documentFilename')} (${t('searchId')}: ${searchResults.search_id})`;
+  }
+  
+  // If we still don't have a document name but have a collection name, use that
+  if (!docName && searchResults?.collection_name) {
+    return `${prefix}${t('collectionName')}: ${searchResults.collection_name}`;
+  }
+  
+  // If we still don't have anything, use a placeholder
+  if (!docName) {
+    return `${prefix}${t('documentFilename')} ${searchResults?.index_id || ''}`;
+  }
+  
+  return `${prefix}${docName}`;
 };
 
 // Separate component for search results display
@@ -258,9 +332,39 @@ const SearchInfoSection = ({
   refreshing,
   lastRefreshed
 }) => {
-  if (!indexId) return null;
-  // Make sure to get the clean document name for display
+  if (!indexId) return null;  
+  
+  // Make sure to get the clean document name for display  
   const getDocumentName = () => {
+    // Direct collection info has highest priority (from App.jsx)
+    if (searchResults?.collection_name) {
+      const docCount = searchResults.indices?.length || 0;
+      if (docCount > 1) {
+        return `${t('collectionName')}: ${searchResults.collection_name} (${docCount} ${t('documentsInCollection')})`;
+      }
+    }
+    
+    // Check for collection_display_name set by App.jsx
+    if (searchResults?.collection_display_name) {
+      return searchResults.collection_display_name;
+    }
+    
+    // Next check if we have collection information in search_info
+    if (searchResults?.search_info?.collection_info) {
+      const collectionInfo = searchResults.search_info.collection_info;
+      
+      // If we have a collection with multiple documents
+      if (collectionInfo.document_ids && collectionInfo.document_ids.length > 1) {
+        return searchResults.collection_display_name || 
+               `${t('collectionName')}: ${collectionInfo.collection_name} (${collectionInfo.document_ids.length} ${t('documentsInCollection')})`;
+      }
+      
+      // If we have a collection with one document
+      if (collectionInfo.document_filenames && collectionInfo.document_filenames.length === 1) {
+        return collectionInfo.document_filenames[0];
+      }
+    }
+
     // First try to use the document_filename if available
     if (searchResults?.document_filename) {
       // Try to clean up the document name by removing timestamps and hashes
@@ -329,31 +433,50 @@ const SearchInfoSection = ({
     
     return 'Unknown';
   };
-  
-  return (
+    return (
     <div className="mb-4 border-b border-gray-200 pb-3">
       <h3 className="font-medium text-purple-700">{t('currentSearch')}:</h3>
-      <div className="mt-2">
-        <p className="text-sm">
+      <div className="mt-2">        <p className="text-sm">
           <span className="font-medium">{t('indexId')}:</span> {indexId}
-        </p>
-        <p className="mt-1 text-xs text-gray-600">
+          {searchResults?.collection_name && (
+            <span className="ml-2 text-xs text-blue-600 font-medium">
+              ({t('collectionName')}: {searchResults.collection_name})
+            </span>
+          )}
+          {!searchResults?.collection_name && searchResults?.search_info?.collection_info?.document_ids?.length > 1 && (
+            <span className="ml-2 text-xs text-blue-600 font-medium">
+              ({searchResults.search_info.collection_info.document_ids.length} {t('documentsInCollection')})
+            </span>
+          )}
+        </p>        <p className="mt-1 text-xs text-gray-600">
           {t('similarityThreshold')}: {actualThreshold.toFixed(4)} 
           <span className="text-xs text-gray-500 ml-1">({t('higherForPrecision')})</span>
-        </p>        {/* Display document filename - always show something meaningful */}
-        <p className="mt-1 text-xs font-medium text-gray-700">
-          {t('documentFilename')}: {getDocumentName()}
+        </p>{/* Display document filename - always show something meaningful */}        <div className="mt-1">
+          <div className="flex items-center flex-wrap">            <span className="text-xs font-medium text-gray-700">{t('source')}:</span>
+            <span className="ml-2 text-xs text-gray-700">{getDocumentDisplayName(searchResults, t, indexId)}</span>
+            {searchResults?.similarity && (
+              <span className="ml-2 text-xs text-green-600 font-medium">
+                ({t('similarity')}: {searchResults.similarity.toFixed(4)})
+              </span>
+            )}
+            {searchResults?.search_info?.collection_info?.document_ids?.length > 1 && (
+              <span className="ml-2 text-xs text-blue-600 font-medium">
+                ({searchResults.search_info.collection_info.document_ids.length} {t('documentsInCollection')})
+              </span>
+            )}
+          </div>
+          
           {refreshing && (
-            <span className="ml-2 inline-block animate-pulse text-blue-500">
+            <span className="mt-1 inline-block animate-pulse text-blue-500 text-xs">
               ⟳ {t('refreshing')}...
             </span>
           )}
           {lastRefreshed && !refreshing && (
-            <span className="ml-2 text-gray-500 text-xs">
+            <span className="mt-1 text-gray-500 text-xs block">
               {t('lastUpdated')}: {lastRefreshed.toLocaleTimeString()}
             </span>
           )}
-        </p>
+        </div>
         
         {/* Display top search results if available */}
         {(searchResults?.query || searchResults?.similarities) && displayResults.length > 0 && (
@@ -413,12 +536,21 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
   const [debugMode, setDebugMode] = useState(false); // Move debugMode state to top level
     // Add a ref to store the current search results from the parent component
   const appSearchResultsRef = React.useRef(null);
-  
-  // Safety function to access global search results
+  // Helper to safely access global search results with additional collection checking
   const safeGetGlobalSearchResults = () => {
     try {
       if (typeof window !== 'undefined' && window.verseMindCurrentSearchResults) {
-        return window.verseMindCurrentSearchResults;
+        // Deep copy to avoid accidental mutations
+        const results = JSON.parse(JSON.stringify(window.verseMindCurrentSearchResults));
+          // Special handling for collections - also check if we have collection results
+        if (results.collection_name) {
+          // console.log("Found collection search in global results:", results.collection_name);
+          
+          // Add a special marker to help identify this as a collection
+          results.index_id_or_collection = results.collection_name;
+        }
+        
+        return results;
       }
     } catch (err) {
       console.warn("Error accessing global search results:", err);
@@ -430,27 +562,31 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
     // Use our safety function to get global search results
     const globalSearchResults = safeGetGlobalSearchResults();
     
-    if (globalSearchResults) {
-      // Only update our ref if the search result matches our index ID
-      if (globalSearchResults.index_id === indexId || 
+    if (globalSearchResults) {      // console.log("StorageInfoPanel: Found global search results", globalSearchResults);
+      
+      // Check for collection search first (higher priority)
+      if (globalSearchResults.collection_name && indexId === globalSearchResults.collection_name) {
+        // console.log("StorageInfoPanel: Found matching collection search results", globalSearchResults);
+        appSearchResultsRef.current = globalSearchResults;      }
+      // Then check for index ID match as before
+      else if (globalSearchResults.index_id === indexId || 
           (globalSearchResults.search_info && globalSearchResults.search_info.index_id === indexId)) {
-        console.log("StorageInfoPanel: Found matching global search results", globalSearchResults);
+        // console.log("StorageInfoPanel: Found matching index search results", globalSearchResults);
         appSearchResultsRef.current = globalSearchResults;
       }
     }
   }, [indexId, forceRefresh]);
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
+  useEffect(() => {    const handleKeyDown = (e) => {
       // Ctrl+Alt+D to toggle debug mode
       if (e.ctrlKey && e.altKey && e.key === 'd') {
         setDebugMode(prev => !prev);
-        console.log('Debug mode:', !debugMode);
+        // console.log('Debug mode:', !debugMode);
       }
       
       // Ctrl+Alt+R to refresh results
       if (e.ctrlKey && e.altKey && e.key === 'r') {
-        console.log('Manually refreshing search results...');
+        // console.log('Manually refreshing search results...');
         const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
         fetchSearchResults(indexId, apiBase, storageInfo);
       }
@@ -459,12 +595,13 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [debugMode, indexId, storageInfo]);
-    // Add auto-refresh for search results
+  
+  // Add auto-refresh for search results
   useEffect(() => {
     if (!indexId) return;
     
     const refreshInterval = 5000; // 5 seconds
-    console.log(`Setting up refresh interval (${refreshInterval}ms) for search results...`);
+    // console.log(`Setting up refresh interval (${refreshInterval}ms) for search results...`);
     
     const intervalId = setInterval(() => {
       if (document.hidden) {
@@ -480,13 +617,12 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
   }, [indexId, storageInfo]);
   // Handle forceRefresh prop by refreshing the search results immediately when it changes
   const forceRefreshRef = React.useRef(forceRefresh);
-  
-  useEffect(() => {
+    useEffect(() => {
     // Only trigger a refresh when forceRefresh prop actually changes
     if (!indexId) return;
     
     if (forceRefresh !== forceRefreshRef.current) {
-      console.log("StorageInfoPanel: forceRefresh prop changed, refreshing search results...");
+      // console.log("StorageInfoPanel: forceRefresh prop changed, refreshing search results...");
       const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
       fetchSearchResults(indexId, apiBase, storageInfo);
       forceRefreshRef.current = forceRefresh;
@@ -497,11 +633,20 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
     const fetchStorageInfo = async () => {
       setLoading(true);
       setError(null);
-      try {
-        // First check if we have valid search results in our ref that can be applied directly
+      try {        // First check if we have valid search results in our ref that can be applied directly
         const cachedResults = appSearchResultsRef.current;
-        if (cachedResults && cachedResults.index_id === indexId && cachedResults.document_filename) {
-          console.log("Using cached search results from App.jsx:", cachedResults);
+        
+        // For a collection search, match by collection name
+        if (cachedResults && 
+            ((cachedResults.collection_name && cachedResults.collection_name === indexId) ||
+             (cachedResults.index_id === indexId && cachedResults.document_filename))) {
+          // console.log("Using cached search results from App.jsx:", cachedResults);
+          
+          // Apply cached results directly if there's a match with collection
+          if (cachedResults.collection_name && cachedResults.collection_name === indexId) {
+            // console.log("✅ Direct match with collection name:", indexId);
+            setSearchResults(processSearchData(cachedResults));
+          }
         }
         
         const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
@@ -514,13 +659,13 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
         
         // Always try to get the latest search file for the current index
         if (indexId && indexId === data.search_info?.index_id) {
-          console.log("Found matching index ID in storage info:", indexId);
+          // console.log("Found matching index ID in storage info:", indexId);
           // Use the most recent search file instead of the one from storage_info
           if (data.recent_search) {
-            console.log("Using recent search from storage info:", data.recent_search);
+            // console.log("Using recent search from storage info:", data.recent_search);
           }
         } else {
-          console.log("Index ID mismatch or not found:", indexId, "vs", data.search_info?.index_id);
+          // console.log("Index ID mismatch or not found:", indexId, "vs", data.search_info?.index_id);
         }
         
         setStorageInfo(data);
@@ -546,8 +691,7 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
       query: message
     };
   };
-  
-  // Helper to extract data from search results
+    // Helper to extract data from search results
   const processSearchData = (searchData) => {
     // Make sure we have similarities array if results are present
     if (searchData.results && Array.isArray(searchData.results) && searchData.results.length > 0) {
@@ -558,10 +702,27 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
       if (!searchData.texts) {
         searchData.texts = searchData.results.map(r => r.text);
       }
+      
+      // Check for document context indicators
+      if (searchData.results.some(r => r.text && 
+          (r.text.includes('**[Using Document Context]**') || 
+          r.text.includes('**[使用文档上下文]**')))) {
+        searchData.using_document_context = true;
+      }
     }
+    
+    // Preserve top similarity score for document display
+    if (searchData.similarities && searchData.similarities.length > 0) {
+      searchData.similarity = Math.max(...searchData.similarities);
+    } else if (searchData.results && searchData.results.length > 0) {
+      const topSimilarity = Math.max(...searchData.results.map(r => r.similarity || 0));
+      if (topSimilarity > 0) {
+        searchData.similarity = topSimilarity;
+      }
+    }
+    
     return searchData;
-  };
-  // Function to fetch search results
+  };// Function to fetch search results
   const fetchSearchResults = async (indexId, apiBase, data) => {
     if (!indexId) return;
     
@@ -572,29 +733,54 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
       setRefreshing(true);
     }
     
-    console.log("Note: Using storage info to determine search results for index ID:", indexId);
+    // console.log("Note: Using storage info to determine search results for index ID:", indexId);
+    
+    // First, check if we have recent global search results stored in our ref
+    // This should have higher priority for collections and most recent searches
+    const globalSearchResult = appSearchResultsRef.current;
+    if (globalSearchResult) {
+      // For collections, check collection_name
+      if (globalSearchResult.collection_name === indexId || 
+          globalSearchResult.index_id_or_collection === indexId) {
+        // console.log("✅ Using global collection search results for:", indexId);
+        setSearchResults(processSearchData(globalSearchResult));
+        setLoading(false);
+        setRefreshing(false);
+        setLastRefreshed(new Date());
+        return;
+      }
+      // For regular index searches
+      else if (globalSearchResult.index_id === indexId) {
+        // console.log("✅ Using global index search results for:", indexId);
+        setSearchResults(processSearchData(globalSearchResult));
+        setLoading(false);
+        setRefreshing(false);
+        setLastRefreshed(new Date());
+        return;
+      }
+    }
     
     try {
-      // First, get a list of all search files from the server
+      // If no global results, get a list of all search files from the server
       const searchFilesResponse = await fetch(`${apiBase}/api/debug/search-files?index_id=${indexId}`);
       if (searchFilesResponse.ok) {
         const searchFiles = await searchFilesResponse.json();
-        console.log("Found search files for index:", searchFiles);
+        // console.log("Found search files for index:", searchFiles);
         
         if (Array.isArray(searchFiles) && searchFiles.length > 0) {
           // Sort by timestamp (newest first) and get the most recent file
           const latestSearchFile = searchFiles[0]; // Assuming API returns already sorted
-          console.log("Using latest search file:", latestSearchFile);
+          // console.log("Using latest search file:", latestSearchFile);
           
           // Now fetch the actual search results
           const searchResultsResponse = await fetch(`${apiBase}/api/debug/search-results/${latestSearchFile}`);
           
           if (searchResultsResponse.ok) {
             const searchData = await searchResultsResponse.json();
-            console.log("Search results loaded:", searchData);
+            // console.log("Search results loaded:", searchData);
               // Make sure this file matches our index_id
             if (searchData.index_id === indexId) {
-              console.log("✅ Search file matches current index ID:", indexId);
+              // console.log("✅ Search file matches current index ID:", indexId);
                 // If there's document_filename in App.jsx's currentSearchResult, use it for consistency
               try {
                 // Use our safely stored ref instead of directly accessing window
@@ -602,7 +788,7 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
                 if (searchData.search_id && appSearchResult && 
                     appSearchResult.search_id === searchData.search_id && 
                     appSearchResult.document_filename) {
-                  console.log("Using document filename from App.jsx for consistency:", appSearchResult.document_filename);
+                  //                  // console.log("Using document filename from App.jsx for consistency:", appSearchResult.document_filename);
                   searchData.document_filename = appSearchResult.document_filename;
                 }
               } catch (err) {
@@ -621,20 +807,20 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
       // Fallback: If we couldn't get the latest search file or it didn't match,
       // try using the one from storage_info
       if (data?.recent_search) {
-        console.log("Fallback: Using recent search from storage info:", data.recent_search);
+        // console.log("Fallback: Using recent search from storage info:", data.recent_search);
         const searchResultsResponse = await fetch(`${apiBase}/api/debug/search-results/${data.recent_search}`);
         
         if (searchResultsResponse.ok) {
           const searchData = await searchResultsResponse.json();
-          console.log("Search results loaded (from storage info):", searchData);
+          // console.log("Search results loaded (from storage info):", searchData);
           setSearchResults(processSearchData(searchData));
         } else {
-          console.log("Could not fetch search results file, using basic info");
+          // console.log("Could not fetch search results file, using basic info");
           setSearchResults(createMinimalSearchResults(data, indexId, "Search results not available"));
         }
       } else {
         // No search files found
-        console.log("No search files found for this index");
+        // console.log("No search files found for this index");
         setSearchResults(createMinimalSearchResults(data, indexId, "No recent search data available"));
       }    } catch (searchErr) {
       console.error("Error fetching search results file:", searchErr);
@@ -677,30 +863,50 @@ function StorageInfoPanel({ indexId, forceRefresh = false }) {
   
   // Get the actual threshold
   const actualThreshold = determineThreshold(processedResults, storageInfo);
-    // Log the threshold to help debug
-  console.log("Threshold values:", {
-    search_results_threshold: processedResults?.similarity_threshold,
-    raw_threshold: processedResults?.similarity_threshold,
-    threshold_type: typeof processedResults?.similarity_threshold,
-    current_threshold: storageInfo?.current_threshold,
-    storage_info_threshold: storageInfo?.similarity_threshold,
-    actual_threshold_used: actualThreshold,
-    document_filename: processedResults?.document_filename || processedResults?.document_id,
-    document_filename_type: typeof processedResults?.document_filename,
-    document_filename_length: processedResults?.document_filename?.length,
-    search_id: processedResults?.search_id,
-    has_search_info: !!processedResults?.search_info,
-    search_info_doc_filename: processedResults?.search_info?.document_filename
-  });// Process search results
+  // Log the threshold to help debug
+  // console.log("Threshold values:", {
+  //   search_results_threshold: processedResults?.similarity_threshold,
+  //   raw_threshold: processedResults?.similarity_threshold,
+  //   threshold_type: typeof processedResults?.similarity_threshold,
+  //   current_threshold: storageInfo?.current_threshold,
+  //   storage_info_threshold: storageInfo?.similarity_threshold,
+  //   actual_threshold_used: actualThreshold,
+  //   document_filename: processedResults?.document_filename || processedResults?.document_id,
+  //   document_filename_type: typeof processedResults?.document_filename,
+  //   document_filename_length: processedResults?.document_filename?.length,
+  //   search_id: processedResults?.search_id,
+  //   has_search_info: !!processedResults?.search_info,
+  //   search_info_doc_filename: processedResults?.search_info?.document_filename
+  // });// Process search results
   const topResults = processSearchResults(processedResults);
-  
-  console.log("Processed top results:", topResults);
+    // console.log("Processed top results:", topResults);
   
   // Always show at least the top 5 results regardless of threshold
   const displayResults = topResults.slice(0, 5);
   
   // Separate results above threshold for special handling
   const resultsAboveThreshold = topResults.filter(r => r.similarity >= actualThreshold);
+  
+  // For debugging only - verify the top scores match what's shown in the chat
+  if (displayResults.length > 0) {
+    const topScores = displayResults.slice(0, 3).map(r => r.similarity.toFixed(4));
+    // console.log("Top 3 similarity scores in panel:", topScores.join(", "));
+    
+    // Compare with global result scores if available
+    try {      if (window.verseMindCurrentSearchResults?.results?.length > 0) {
+        
+        // Check for collection searches specifically
+        if (window.verseMindCurrentSearchResults.collection_name === indexId) {
+          const globalScores = window.verseMindCurrentSearchResults.results
+            .slice(0, 3)
+            .map(r => r.similarity.toFixed(4));
+          // console.log("Top 3 similarity scores in global (collection):", globalScores.join(", "));
+        }
+      }
+    } catch (err) {
+      console.warn("Error comparing similarity scores:", err);
+    }
+  }
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-sm mb-4">

@@ -81,10 +81,10 @@ class IndexService:
         os.makedirs(os.path.join(self.vector_db_dir, "chroma"), exist_ok=True)
         
         # 添加日志记录所有路径
-        self.logger.info(f"索引服务初始化，路径配置：")
-        self.logger.info(f"  - 嵌入向量目录: {self.embeddings_dir}")
-        self.logger.info(f"  - 索引元数据目录: {self.indices_dir}")
-        self.logger.info(f"  - 向量数据库目录: {self.vector_db_dir}")
+        self.logger.debug("索引服务初始化，路径配置：")
+        self.logger.debug(f"  - 嵌入向量目录: {self.embeddings_dir}")
+        self.logger.debug(f"  - 索引元数据目录: {self.indices_dir}")
+        self.logger.debug(f"  - 向量数据库目录: {self.vector_db_dir}")
 
 class VectorDBConfig:
     """
@@ -149,11 +149,11 @@ class IndexService:
         os.makedirs(os.path.join(self.vector_db_dir, "chroma"), exist_ok=True)
         
         # 打印路径配置，以便确认它们是否匹配
-        print(f"[SERVICE LOG IndexService.__init__] 检查配置文件路径与实际路径是否匹配:")
-        print(f"[SERVICE LOG IndexService.__init__] - config.toml中vector_store.persist_directory: './storage/vector_db'")
+        print("[SERVICE LOG IndexService.__init__] 检查配置文件路径与实际路径是否匹配:")
+        print("[SERVICE LOG IndexService.__init__] - config.toml中vector_store.persist_directory: './storage/vector_db'")
         print(f"[SERVICE LOG IndexService.__init__] - 解析后的向量数据库路径: {self.vector_db_dir}")
         
-        print(f"[SERVICE LOG IndexService.__init__] 索引服务初始化，路径配置：")
+        print("[SERVICE LOG IndexService.__init__] 索引服务初始化，路径配置：")
         print(f"[SERVICE LOG IndexService.__init__] - 嵌入向量目录: {self.embeddings_dir}")
         print(f"[SERVICE LOG IndexService.__init__] - 索引元数据目录: {self.indices_dir}")
         print(f"[SERVICE LOG IndexService.__init__] - 向量数据库目录: {self.vector_db_dir}")
@@ -179,8 +179,6 @@ class IndexService:
         
         # 如果未指定嵌入ID，则尝试查找最新的嵌入
         if embedding_id is None:
-            # 这里应实现查找最新嵌入的逻辑
-            # 目前暂不实现此功能，抛出错误
             raise ValueError("必须指定嵌入ID")
         
         # 如果未指定集合名称或索引名称，则自动生成
@@ -241,8 +239,9 @@ class IndexService:
                     # 文档ID格式通常是"原始文件名_日期时间_ID"
                     # 提取原始文件名部分
                     document_filename = "_".join(parts[:-2])
-        except:
-            pass  # 如果提取失败则使用完整的document_id
+        except Exception as e:
+            self.logger.debug(f"Failed to extract document filename from ID: {str(e)}")
+            # 如果提取失败则使用完整的document_id
         
         # 构建索引结果
         result = {
@@ -276,25 +275,54 @@ class IndexService:
         """获取所有索引列表"""
         indices = []
         
-        if os.path.exists(self.indices_dir):
-            for filename in os.listdir(self.indices_dir):
+        # Ensure the indices directory exists
+        if not os.path.exists(self.indices_dir):
+            self.logger.warning(f"Indices directory does not exist: {self.indices_dir}")
+            return indices
+        
+        try:
+            # Check if directory is empty
+            filenames = os.listdir(self.indices_dir)
+            if not filenames:
+                self.logger.info(f"Indices directory is empty: {self.indices_dir}")
+                return indices
+            
+            for filename in filenames:
                 if filename.endswith(".json"):
                     file_path = os.path.join(self.indices_dir, filename)
                     
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        index_data = json.load(f)
-                    
-                    indices.append({
-                        "document_id": index_data.get("document_id", ""),
-                        "index_id": index_data.get("index_id", ""),
-                        "timestamp": index_data.get("timestamp", ""),
-                        "vector_db": index_data.get("vector_db", ""),
-                        "collection_name": index_data.get("collection_name", ""),
-                        "index_name": index_data.get("index_name", ""),
-                        "version": index_data.get("version", ""),
-                        "total_vectors": index_data.get("total_vectors", 0),
-                        "file": filename
-                    })
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            index_data = json.load(f)
+                        
+                        # Validate that the JSON contains required fields
+                        if not isinstance(index_data, dict):
+                            self.logger.warning(f"Invalid index file format (not a dict): {filename}")
+                            continue
+                            
+                        indices.append({
+                            "document_id": index_data.get("document_id", ""),
+                            "index_id": index_data.get("index_id", ""),
+                            "timestamp": index_data.get("timestamp", ""),
+                            "vector_db": index_data.get("vector_db", ""),
+                            "collection_name": index_data.get("collection_name", ""),
+                            "index_name": index_data.get("index_name", ""),
+                            "version": index_data.get("version", ""),
+                            "total_vectors": index_data.get("total_vectors", 0),
+                            "file": filename
+                        })
+                        
+                    except json.JSONDecodeError as e:
+                        self.logger.error(f"Failed to parse JSON file {filename}: {str(e)}")
+                        continue
+                    except Exception as e:
+                        self.logger.error(f"Error reading index file {filename}: {str(e)}")
+                        continue
+                        
+        except Exception as e:
+            self.logger.error(f"Error listing indices directory {self.indices_dir}: {str(e)}")
+            # Return empty list instead of raising exception
+            return indices
         
         return indices
     
@@ -367,7 +395,8 @@ class IndexService:
                 finally:
                     try:
                         connections.disconnect("default")
-                    except:
+                    except Exception:
+                        # Ignore disconnection errors as they are non-critical during cleanup
                         pass
             
             # 删除索引文件
@@ -384,66 +413,138 @@ class IndexService:
                 "index_name": index_name
             }
         except Exception as e:
-            raise Exception(f"删除索引时发生错误: {str(e)}")
+            raise RuntimeError(f"删除索引时发生错误: {str(e)}")
     
     def _find_embedding_file(self, document_id: str, embedding_id: str) -> Optional[str]:
         """查找指定文档和嵌入ID的嵌入文件"""
         print(f"[SERVICE LOG IndexService._find_embedding_file] Searching for embedding file with document_id='{document_id}' and embedding_id='{embedding_id}' in directory='{self.embeddings_dir}'")
+        
+        if not self._embeddings_directory_exists():
+            return None
+            
+        return self._search_embedding_files(document_id, embedding_id)
+    
+    def _embeddings_directory_exists(self) -> bool:
+        """检查嵌入目录是否存在"""
         if os.path.exists(self.embeddings_dir):
             print(f"[SERVICE LOG IndexService._find_embedding_file] Directory '{self.embeddings_dir}' exists. Listing files...")
-            for filename in os.listdir(self.embeddings_dir):
-                print(f"[SERVICE LOG IndexService._find_embedding_file] Checking file: '{filename}'")
-                # First, check if document_id is in filename and it's a .json file ending with _embedded.json
-                if document_id in filename and filename.endswith("_embedded.json"):
-                    print(f"[SERVICE LOG IndexService._find_embedding_file] Candidate file (matches document_id and suffix): '{filename}'")
-                    file_path = os.path.join(self.embeddings_dir, filename)
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            embedding_data = json.load(f)
-                        # Now check if the embedding_id inside the JSON matches the target embedding_id
-                        internal_embedding_id = embedding_data.get("embedding_id") # Or however it's named in your JSON
-                        if internal_embedding_id == embedding_id:
-                            print(f"[SERVICE LOG IndexService._find_embedding_file] Match found: Internal embedding_id ('{internal_embedding_id}') matches target ('{embedding_id}'). File: '{file_path}'")
-                            return file_path
-                        else:
-                            print(f"[SERVICE LOG IndexService._find_embedding_file] File '{filename}' matches document_id, but its internal embedding_id ('{internal_embedding_id}') does not match target ('{embedding_id}').")
-                    except json.JSONDecodeError:
-                        print(f"[SERVICE WARNING IndexService._find_embedding_file] Could not decode JSON from candidate file: '{filename}'")
-                    except Exception as e:
-                        print(f"[SERVICE WARNING IndexService._find_embedding_file] Error reading or processing candidate file '{filename}': {e}")
-            print(f"[SERVICE LOG IndexService._find_embedding_file] No matching file found after checking all candidate files in '{self.embeddings_dir}'.")
+            return True
         else:
             print(f"[SERVICE ERROR IndexService._find_embedding_file] Embeddings directory '{self.embeddings_dir}' does not exist.")
+            return False
+    
+    def _search_embedding_files(self, document_id: str, embedding_id: str) -> Optional[str]:
+        """在嵌入目录中搜索匹配的文件"""
+        for filename in os.listdir(self.embeddings_dir):
+            print(f"[SERVICE LOG IndexService._find_embedding_file] Checking file: '{filename}'")
+            
+            if self._is_candidate_embedding_file(filename, document_id):
+                file_path = self._check_embedding_file_content(filename, embedding_id)
+                if file_path:
+                    return file_path
+        
+        print(f"[SERVICE LOG IndexService._find_embedding_file] No matching file found after checking all candidate files in '{self.embeddings_dir}'.")
         return None
+    
+    def _is_candidate_embedding_file(self, filename: str, document_id: str) -> bool:
+        """检查文件是否为候选嵌入文件"""
+        is_candidate = document_id in filename and filename.endswith("_embedded.json")
+        if is_candidate:
+            print(f"[SERVICE LOG IndexService._find_embedding_file] Candidate file (matches document_id and suffix): '{filename}'")
+        return is_candidate
+    
+    def _check_embedding_file_content(self, filename: str, embedding_id: str) -> Optional[str]:
+        """检查嵌入文件内容是否匹配目标embedding_id"""
+        file_path = os.path.join(self.embeddings_dir, filename)
+        
+        try:
+            embedding_data = self._load_embedding_data(file_path)
+            return self._validate_embedding_id(embedding_data, embedding_id, file_path, filename)
+        except json.JSONDecodeError:
+            print(f"[SERVICE WARNING IndexService._find_embedding_file] Could not decode JSON from candidate file: '{filename}'")
+        except Exception as e:
+            print(f"[SERVICE WARNING IndexService._find_embedding_file] Error reading or processing candidate file '{filename}': {e}")
+        
+        return None
+    
+    def _load_embedding_data(self, file_path: str) -> dict:
+        """加载嵌入数据文件"""
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    
+    def _validate_embedding_id(self, embedding_data: dict, target_embedding_id: str, file_path: str, filename: str) -> Optional[str]:
+        """验证嵌入ID是否匹配"""
+        internal_embedding_id = embedding_data.get("embedding_id")
+        
+        if internal_embedding_id == target_embedding_id:
+            print(f"[SERVICE LOG IndexService._find_embedding_file] Match found: Internal embedding_id ('{internal_embedding_id}') matches target ('{target_embedding_id}'). File: '{file_path}'")
+            return file_path
+        else:
+            print(f"[SERVICE LOG IndexService._find_embedding_file] File '{filename}' matches document_id, but its internal embedding_id ('{internal_embedding_id}') does not match target ('{target_embedding_id}').")
+            return None
     
     def _find_index_file(self, index_id: str) -> Optional[str]:
         """查找指定ID的索引文件"""
         print(f"[SERVICE LOG IndexService._find_index_file] Searching for index file with index_id='{index_id}' in directory='{self.indices_dir}'")
+        
+        if not self._indices_directory_exists():
+            return None
+            
+        return self._search_index_files(index_id)
+    
+    def _indices_directory_exists(self) -> bool:
+        """检查索引目录是否存在"""
         if os.path.exists(self.indices_dir):
             print(f"[SERVICE LOG IndexService._find_index_file] Directory '{self.indices_dir}' exists. Listing files...")
-            for filename in os.listdir(self.indices_dir):
-                if filename.endswith(".json"):
-                    file_path = os.path.join(self.indices_dir, filename)
-                    print(f"[SERVICE LOG IndexService._find_index_file] Checking file: '{filename}'")
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            index_data = json.load(f)
-                        
-                        # Check if the index_id inside the JSON matches the target index_id
-                        internal_index_id = index_data.get("index_id")
-                        print(f"[SERVICE LOG IndexService._find_index_file] File '{filename}' has internal index_id: '{internal_index_id}'")
-                        
-                        if internal_index_id == index_id:
-                            print(f"[SERVICE LOG IndexService._find_index_file] Match found: File '{filename}' contains index_id='{index_id}'")
-                            return file_path
-                    except json.JSONDecodeError:
-                        print(f"[SERVICE WARNING IndexService._find_index_file] Could not decode JSON from file: '{filename}'")
-                    except Exception as e:
-                        print(f"[SERVICE WARNING IndexService._find_index_file] Error reading or processing file '{filename}': {str(e)}")
-            
-            print(f"[SERVICE WARNING IndexService._find_index_file] No index file with index_id='{index_id}' found in '{self.indices_dir}'")
+            return True
         else:
             print(f"[SERVICE ERROR IndexService._find_index_file] Indices directory '{self.indices_dir}' does not exist")
+            return False
+    
+    def _search_index_files(self, index_id: str) -> Optional[str]:
+        """在索引目录中搜索匹配的文件"""
+        for filename in os.listdir(self.indices_dir):
+            if self._is_candidate_index_file(filename):
+                file_path = self._check_index_file_content(filename, index_id)
+                if file_path:
+                    return file_path
+        
+        print(f"[SERVICE WARNING IndexService._find_index_file] No index file with index_id='{index_id}' found in '{self.indices_dir}'")
+        return None
+    
+    def _is_candidate_index_file(self, filename: str) -> bool:
+        """检查文件是否为候选索引文件"""
+        return filename.endswith(".json")
+    
+    def _check_index_file_content(self, filename: str, target_index_id: str) -> Optional[str]:
+        """检查索引文件内容是否匹配目标index_id"""
+        file_path = os.path.join(self.indices_dir, filename)
+        print(f"[SERVICE LOG IndexService._find_index_file] Checking file: '{filename}'")
+        
+        try:
+            index_data = self._load_index_data(file_path)
+            return self._validate_index_id(index_data, target_index_id, filename, file_path)
+        except json.JSONDecodeError:
+            print(f"[SERVICE WARNING IndexService._find_index_file] Could not decode JSON from file: '{filename}'")
+        except Exception as e:
+            print(f"[SERVICE WARNING IndexService._find_index_file] Error reading or processing file '{filename}': {str(e)}")
+        
+        return None
+    
+    def _load_index_data(self, file_path: str) -> dict:
+        """加载索引数据文件"""
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    
+    def _validate_index_id(self, index_data: dict, target_index_id: str, filename: str, file_path: str) -> Optional[str]:
+        """验证索引ID是否匹配"""
+        internal_index_id = index_data.get("index_id")
+        print(f"[SERVICE LOG IndexService._find_index_file] File '{filename}' has internal index_id: '{internal_index_id}'")
+        
+        if internal_index_id == target_index_id:
+            print(f"[SERVICE LOG IndexService._find_index_file] Match found: File '{filename}' contains index_id='{target_index_id}'")
+            return file_path
+        
         return None
     
     def _create_faiss_index(self, embeddings: List[Dict[str, Any]], collection_name: str, index_name: str) -> Dict[str, Any]:
@@ -454,8 +555,6 @@ class IndexService:
             
             # 提取向量和ID
             vectors = [emb.get("vector", []) for emb in embeddings]
-            # 保存IDs以备后续使用，目前未实现
-            ids = [emb.get("id", "") for emb in embeddings]
             
             # 配置索引路径（使用vector_db_dir下的faiss子目录）
             index_path = os.path.join(self.vector_db_dir, "faiss", f"{collection_name}_{index_name}.faiss")
@@ -476,7 +575,7 @@ class IndexService:
                 if vector_db_config.metric.lower() == "cosine":
                     # 对于余弦相似度，需要先对向量进行归一化
                     faiss.normalize_L2(vector_array)
-                    index = faiss.IndexFlatIP(dimensions)  # 内积与归一化向量 = 余弦相似度
+                    index = faiss.IndexFlatIP(dimensions)
                 elif vector_db_config.metric.lower() == "l2":
                     index = faiss.IndexFlatL2(dimensions)  # L2距离
                 else:  # "ip" 内积 
@@ -490,12 +589,12 @@ class IndexService:
                     # 保存索引到文件
                     print(f"[SERVICE LOG IndexService._create_faiss_index] 保存FAISS索引到: {index_path}")
                     faiss.write_index(index, index_path)
-                    print(f"[SERVICE LOG IndexService._create_faiss_index] FAISS索引已成功保存")
+                    print("[SERVICE LOG IndexService._create_faiss_index] FAISS索引已成功保存")
                 else:
-                    print(f"[SERVICE WARNING IndexService._create_faiss_index] 没有向量可添加到索引")
+                    print("[SERVICE WARNING IndexService._create_faiss_index] 没有向量可添加到索引")
             except ImportError as e:
                 print(f"[SERVICE ERROR IndexService._create_faiss_index] 无法导入FAISS库: {str(e)}")
-                print(f"[SERVICE ERROR IndexService._create_faiss_index] 请确保已安装FAISS: pip install faiss-cpu 或 pip install faiss-gpu")
+                print("[SERVICE ERROR IndexService._create_faiss_index] 请确保已安装FAISS: pip install faiss-cpu 或 pip install faiss-gpu")
                 raise
             except Exception as e:
                 print(f"[SERVICE ERROR IndexService._create_faiss_index] 创建FAISS索引时出错: {str(e)}")
@@ -568,7 +667,7 @@ class IndexService:
                         
                         print(f"[SERVICE LOG IndexService._create_chroma_index] Chroma索引已成功保存到 {index_path}")
                     else:
-                        print(f"[SERVICE WARNING IndexService._create_chroma_index] 没有向量可添加到Chroma索引")
+                        print("[SERVICE WARNING IndexService._create_chroma_index] 没有向量可添加到Chroma索引")
                         
                 except ImportError:
                     print("[SERVICE WARNING IndexService._create_chroma_index] chromadb未安装，无法创建实际的Chroma索引")

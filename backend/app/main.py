@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import sys
@@ -20,7 +20,13 @@ log_level_map = {
 log_level = log_level_map.get(log_level_str, logging.INFO)
 
 logging.basicConfig(level=log_level)
-logging.info(f"Logging level set to: {log_level_str}")
+logging.debug(f"Logging level set to: {log_level_str}")
+
+# MCP server configuration
+ENABLE_MCP_SERVER = os.getenv('ENABLE_MCP_SERVER', 'true').lower() == 'true'
+MCP_SERVER_PORT = int(os.getenv('MCP_SERVER_PORT', '3005'))
+MCP_SERVER_HOST = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
+logging.debug(f"MCP Server settings: enabled={ENABLE_MCP_SERVER}, port={MCP_SERVER_PORT}, host={MCP_SERVER_HOST}")
 
 # 创建一个将标准输出重定向到日志系统的处理程序
 class PrintToLogger:
@@ -58,17 +64,31 @@ logging.getLogger("SearchService").setLevel(logging.WARNING)  # Changed from INF
 
 # 导入API路由
 from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api, debug
-from app.api import debug_storage
+from app.api import debug_storage, mcp, health
 
 # 创建FastAPI应用
 app = FastAPI(
     title="VerseMind-RAG API",
     description="Where Poetry Meets AI - 检索增强生成系统API",
-    version="0.1.0"
+    version="0.2.0"
 )
 
 @app.on_event("startup")
 async def startup_event():
+    # 如果配置启用了MCP服务器，则在后台启动它
+    if ENABLE_MCP_SERVER:
+        try:
+            from app.mcp import start_mcp_server
+            logging.info("Starting MCP server...")
+            success = start_mcp_server(port=MCP_SERVER_PORT, host=MCP_SERVER_HOST)
+            if success:
+                logging.info(f"MCP server started on {MCP_SERVER_HOST}:{MCP_SERVER_PORT}")
+            else:
+                logging.error("Failed to start MCP server")
+        except Exception as e:
+            logging.error(f"Error starting MCP server: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
     # 定义所有必要的目录路径 - 保持唯一性
     required_dirs = [
         # 原始文档
@@ -116,18 +136,37 @@ api_router.include_router(documents.router, prefix="/documents", tags=["document
 api_router.include_router(chunks.router, prefix="/chunks", tags=["chunks"])
 api_router.include_router(parse.router, prefix="/parse", tags=["parse"])
 api_router.include_router(embeddings.router, prefix="/embeddings", tags=["embeddings"])
-api_router.include_router(index.router, prefix="/index", tags=["index"])
+api_router.include_router(index.router, prefix="/indices", tags=["indices"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(generate.router, prefix="/generate", tags=["generate"])
 api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
 api_router.include_router(debug_storage.router, prefix="/debug", tags=["debug"])
 
+# 添加MCP路由
+api_router.include_router(mcp.router, prefix="/mcp", tags=["mcp"])
+
 # 将路由添加到应用
 app.include_router(api_router, prefix="/api")
 app.include_router(config_api.router, prefix="/api")
-app.include_router(index.router, prefix="/api/indices")
-app.include_router(embeddings.router, prefix="/api/embeddings")
-app.include_router(search.router, prefix="/api/search")
+app.include_router(health.router, prefix="/api/health")
+# Note: index, embeddings, and search routers are already included in api_router above
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """清理资源并关闭MCP服务器."""
+    if ENABLE_MCP_SERVER:
+        try:
+            from app.mcp import stop_mcp_server
+            logging.info("Stopping MCP server...")
+            success = stop_mcp_server()
+            if success:
+                logging.info("MCP server stopped")
+            else:
+                logging.warning("Failed to stop MCP server")
+        except Exception as e:
+            logging.error(f"Error stopping MCP server: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
 
 # 根路由
 @app.get("/")

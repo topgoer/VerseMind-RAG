@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
-import { fetchEmbeddingsDirectly, fetchIndicesDirectly } from '../../services/api';
-import StorageInfoPanel from './StorageInfoPanel';
+import { fetchEmbeddingsDirectly } from '../../services/api';
 
 // Default vector databases if config fails to load
 const DEFAULT_VECTOR_DBS = {
@@ -22,19 +22,21 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
   const { t } = useLanguage();
   const [selectedEmbedding, setSelectedEmbedding] = useState('');
   const [indexType, setIndexType] = useState(''); // Initialize empty
-  const [config, setConfig] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [indexResult, setIndexResult] = useState(null);
   const [vectorDatabases, setVectorDatabases] = useState(DEFAULT_VECTOR_DBS); // Initialize with default
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [collectionName, setCollectionName] = useState('');
+  const [selectedCollection, setSelectedCollection] = useState('');
+  const [availableCollections, setAvailableCollections] = useState([]);
 
   // Load embeddings when component mounts or when embeddings array is empty
   useEffect(() => {
     const loadEmbeddingsData = async () => {
-      console.log('[IndexingModule] Loading embeddings data, current status:', { 
-        hasEmbeddings: Array.isArray(embeddings) && embeddings.length > 0,
-        initialLoadDone
-      });
+      // console.log('[IndexingModule] Loading embeddings data, current status:', { 
+      //   hasEmbeddings: Array.isArray(embeddings) && embeddings.length > 0,
+      //   initialLoadDone
+      // });
       
       try {
         // First try to use the provided onLoadEmbeddings function
@@ -44,7 +46,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         } 
         // If we still don't have embeddings after calling onLoadEmbeddings, fetch directly from API
         else if (!Array.isArray(embeddings) || embeddings.length === 0) {
-          console.log('[IndexingModule] Directly fetching embeddings from backend API');
+          // console.log('[IndexingModule] Directly fetching embeddings from backend API');
           await fetchEmbeddingsDirectlyFromAPI();
           setInitialLoadDone(true);
         }
@@ -59,7 +61,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         const data = await fetchEmbeddingsDirectly();
         
         if (Array.isArray(data) && data.length > 0) {
-          console.log('[IndexingModule] Successfully fetched embeddings directly:', data.length);
+          // console.log('[IndexingModule] Successfully fetched embeddings directly:', data.length);
           // If we have a setEmbeddings function in the parent component, update it
           if (typeof onLoadEmbeddings === 'function') {
             await onLoadEmbeddings(); // This will update the parent's state
@@ -74,7 +76,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
 
     // Always try to load embeddings on mount if we don't have any
     if ((!Array.isArray(embeddings) || embeddings.length === 0) && !loading && !initialLoadDone) {
-      console.log('[IndexingModule] Loading embeddings on component mount or empty state');
+      // console.log('[IndexingModule] Loading embeddings on component mount or empty state');
       loadEmbeddingsData();
     }
 
@@ -90,7 +92,6 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
       try {
         setConfigLoading(true);
         const configData = await loadConfig();
-        setConfig(configData);
         
         // Safely set vector databases
         if (configData && 
@@ -142,10 +143,26 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
   // Automatically set the first embedding if available
   useEffect(() => {
     if (Array.isArray(embeddings) && embeddings.length > 0 && !selectedEmbedding) {
-      console.log('[IndexingModule] Embeddings loaded, setting first embedding as default');
+      // console.log('[IndexingModule] Embeddings loaded, setting first embedding as default');
       setSelectedEmbedding(embeddings[0].embedding_id);
     }
   }, [embeddings, selectedEmbedding]);
+  
+  // Extract and update available collections whenever indices change
+  useEffect(() => {
+    if (Array.isArray(indices) && indices.length > 0) {
+      // Get unique collection names
+      const uniqueCollections = [...new Set(indices.map(idx => idx.collection_name))].filter(Boolean);
+      setAvailableCollections(uniqueCollections);
+      
+      // If we have collections and no selected collection, select the first one
+      if (uniqueCollections.length > 0 && !selectedCollection) {
+        setSelectedCollection(uniqueCollections[0]);
+      }
+    } else {
+      setAvailableCollections([]);
+    }
+  }, [indices, selectedCollection]);
 
   // 处理表单提交
   const handleSubmit = async (e) => {
@@ -159,19 +176,44 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         throw new Error("Selected embedding not found");
       }
 
-      console.log('[IndexingModule] Type of onCreateIndex:', typeof onCreateIndex);
-      console.log('[IndexingModule] Creating index for document:', embeddingInfo.document_id);
-      console.log('[IndexingModule] Using vector DB:', indexType);
-      console.log('[IndexingModule] Using embedding ID:', selectedEmbedding);
+      // console.log('[IndexingModule] Type of onCreateIndex:', typeof onCreateIndex);
+      // console.log('[IndexingModule] Creating index for document:', embeddingInfo.document_id);
+      // console.log('[IndexingModule] Using vector DB:', indexType);
+      // console.log('[IndexingModule] Using embedding ID:', selectedEmbedding);
+      // console.log('[IndexingModule] Using collection name:', collectionName || 'default');
 
       if (typeof onCreateIndex !== 'function') {
         console.error('[IndexingModule] onCreateIndex is not a function. Props received by IndexingModule:', { embeddings, indices, documents, loading, error, onCreateIndex, onIndexDelete, onRefresh });
         throw new TypeError('onCreateIndex prop is not a function as expected in IndexingModule.');
       }
 
-      // Call createIndex with the expected parameters: documentId, vectorDb, embeddingId
-      const result = await onCreateIndex(embeddingInfo.document_id, indexType, selectedEmbedding);
+      // Check if we need to modify App.jsx's handleCreateIndex function to accept collection_name
+      // For now, we're assuming App.jsx will handle generating a default collection name if none is provided
+      // Create a document-specific default collection name if none provided
+      const finalCollectionName = collectionName || `col_${embeddingInfo.document_id.substring(0, 10)}`;
+      
+      // Call createIndex with the expected parameters: documentId, vectorDb, embeddingId, collectionName, indexName
+      const result = await onCreateIndex(
+        embeddingInfo.document_id, 
+        indexType, 
+        selectedEmbedding,
+        finalCollectionName,
+        null // indexName - let backend auto-generate
+      );
+      
       setIndexResult(result);
+      
+      // console.log('[IndexingModule] Index creation result:', result);
+      // console.log('[IndexingModule] Using collection:', finalCollectionName);
+      
+      // If the collection we used is not in our list, add it
+      if (!availableCollections.includes(finalCollectionName)) {
+        setAvailableCollections([...availableCollections, finalCollectionName]);
+      }
+      
+      // Select the collection we just used
+      setSelectedCollection(finalCollectionName);
+      
     } catch (err) {
       // 错误已在 App.jsx 中处理
       console.error("Indexing failed in module:", err);
@@ -194,13 +236,13 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
   const handleLoadEmbeddings = async () => {
     try {
       if (onLoadEmbeddings && typeof onLoadEmbeddings === 'function') {
-        console.log('[IndexingModule] Refreshing embeddings via parent component');
+        // console.log('[IndexingModule] Refreshing embeddings via parent component');
         await onLoadEmbeddings();
       } else {
-        console.log('[IndexingModule] Refreshing embeddings directly from API');
+        // console.log('[IndexingModule] Refreshing embeddings directly from API');
         await fetchEmbeddingsDirectlyFromAPI();
       }
-      console.log('[IndexingModule] Embeddings refresh completed');
+      // console.log('[IndexingModule] Embeddings refresh completed');
     } catch (error) {
       console.error('[IndexingModule] Error refreshing embeddings:', error);
     }
@@ -286,12 +328,17 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
               disabled={!Array.isArray(embeddings) || embeddings.length === 0 || loading}
             >
               <option value="">
-                {loading 
-                  ? t('loading') 
-                  : (!Array.isArray(embeddings) || embeddings.length === 0) 
-                    ? t('noEmbeddingsAvailable') 
-                    : t('selectEmbeddings')
-                }
+                {(() => {
+                  if (loading) {
+                    return t('loading');
+                  }
+                  
+                  if (!Array.isArray(embeddings) || embeddings.length === 0) {
+                    return t('noEmbeddingsAvailable');
+                  }
+                  
+                  return t('selectEmbeddings');
+                })()}
               </option>
               {/* Ensure embeddings and documents are arrays before mapping */}
               {Array.isArray(embeddings) && Array.isArray(documents) && embeddings.map((emb) => {
@@ -342,6 +389,51 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
           </div>
           
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('collectionName')}
+            </label>
+            <div className="space-y-2">
+              {availableCollections.length > 0 && (
+                <div className="flex flex-col mb-2">
+                  <select
+                    value={collectionName}
+                    onChange={(e) => {
+                      if (e.target.value === "new") {
+                        // If "Create new collection" is selected, reset to empty string for custom input
+                        setCollectionName("");
+                      } else if (e.target.value === "none") {
+                        // If "No collection" is selected, clear the collection name
+                        setCollectionName("");
+                      } else {
+                        setCollectionName(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                  >
+                    <option value="none">{t('selectCollection')}</option>
+                    {availableCollections.map(collection => (
+                      <option key={collection} value={collection}>{collection}</option>
+                    ))}
+                    <option value="new">{t('newCollection')}</option>
+                  </select>
+                </div>
+              )}
+              
+              {/* Always show text input for collection name */}
+              <input
+                type="text"
+                value={collectionName}
+                onChange={(e) => setCollectionName(e.target.value)}
+                placeholder={t('collectionPlaceholder')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {t('collectionDescription', 'Group related indices into a collection for better organization')}
+            </p>
+          </div>
+          
+          <div>
             <button
               type="submit"
               disabled={loading || configLoading || !selectedEmbedding || !indexType || !(vectorDatabases && Object.keys(vectorDatabases).length > 0)}
@@ -375,6 +467,23 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
           </button>
         </div>
         
+        {/* Collection filter selector */}
+        <div className="flex items-center mb-4">
+          <label className="text-sm font-medium text-gray-700 mr-2">
+            {t('filterByCollection')}:
+          </label>
+          <select
+            value={selectedCollection}
+            onChange={(e) => setSelectedCollection(e.target.value)}
+            className="px-3 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 text-sm"
+          >
+            <option value="">{t('allCollections')}</option>
+            {availableCollections.map(collection => (
+              <option key={collection} value={collection}>{collection}</option>
+            ))}
+          </select>
+        </div>
+        
         {loading ? (
           <div className="text-center py-8">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-purple-600"></div>
@@ -392,38 +501,47 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('collectionName')}</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('indexName')}</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('vectorCount')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {Array.isArray(indices) && Array.isArray(documents) && indices.map((idx) => {
-                    const doc = documents.find(d => d.id === idx.document_id);
-                    return (
-                      <tr key={idx.index_id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{idx.index_id}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{doc ? doc.filename : idx.document_id}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.vector_db}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.collection_name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.index_name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.total_vectors}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <button 
-                            onClick={() => onIndexDelete(idx.index_id)} 
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            {t('delete')}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {Array.isArray(indices) && Array.isArray(documents) && indices
+                    .filter(idx => !selectedCollection || idx.collection_name === selectedCollection)
+                    .map((idx) => {
+                      const doc = documents.find(d => d.id === idx.document_id);
+                      return (
+                        <tr key={idx.index_id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{idx.index_id}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{doc ? doc.filename : idx.document_id}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.vector_db}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.collection_name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.index_name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{idx.total_vectors}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button 
+                              onClick={() => onIndexDelete(idx.index_id)} 
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              {t('delete')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
             
             {Array.isArray(indices) && indices.length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                <p>{t('noIndices')}</p> {/* Add translation key */}
+                <p>{t('noIndices')}</p>
+              </div>
+            )}
+            
+            {Array.isArray(indices) && indices.length > 0 && selectedCollection &&
+              indices.filter(idx => idx.collection_name === selectedCollection).length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                <p>{t('noIndicesInCollection', 'No indices in this collection')} ({selectedCollection})</p>
               </div>
             )}
             
@@ -489,5 +607,18 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
     </div>
   );
 }
+
+// Add PropTypes validation for component props
+IndexingModule.propTypes = {
+  embeddings: PropTypes.array,
+  indices: PropTypes.array,
+  documents: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.string,
+  onCreateIndex: PropTypes.func,
+  onIndexDelete: PropTypes.func,
+  onRefresh: PropTypes.func,
+  onLoadEmbeddings: PropTypes.func
+};
 
 export default IndexingModule;

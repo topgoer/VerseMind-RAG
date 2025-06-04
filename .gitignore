@@ -7,16 +7,18 @@ __pycache__/
 *.bak
 node_modules/
 dist/
+
 # Storage directories - no files should be committed
 storage/
 storage/**/*
+!storage/vector_db/.gitkeep
+!storage/embedding_cache/.gitkeep
+!storage/parsed_docs/.gitkeep
+!storage/results/.gitkeep
 backend/storage/
 backend/storage/**/*
-D:\Github\VerseMind-RAG\storage\
-D:\Github\VerseMind-RAG\storage\**\*
-D:\Github\VerseMind-RAG\backend\storage\
-D:\Github\VerseMind-RAG\backend\storage\**\*
 config/config.toml
+!config/config.example.toml
 
 # Python test scripts
 simple_test.py
@@ -37,15 +39,20 @@ config/*.new
 # GitHub CI/CD specific ignores
 .github/workflows/.cache/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 coverage/
 *.log
 test_output.log
+logs/
+log/
 
 # Virtual environments
 venv/
 .venv/
 env/
 .env/
+ENV/
 
 # IDE specific files
 .idea/
@@ -66,8 +73,63 @@ htmlcov/
 *.sqlite
 *.db
 
-# Embeddings and index files (to be generated during deployment)
-backend/04-embedded-docs/
-backend/04-embedded-docs/**/*
-backend/storage/
-backend/storage/**/*
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Node.js package logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+test_output.logsimple_test_logs.pysimple_test.py# Python test scriptshtmlcov/.coverage# Test artifactscoverage/.github/workflows/.cache/# GitHub CI/CD specific ignoresconfig/*.new# Config temporary filestemp/Temp/*.bak# Temporary files# Environment files
+.env
+.env.local
+
+# Configuration 
+config/config.toml
+!config/config.example.toml
+
+# Cache files
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini

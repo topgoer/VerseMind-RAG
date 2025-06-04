@@ -57,8 +57,14 @@ async def list_indices(document_id: Optional[str] = Query(None)):
         if document_id:
             indices = [idx for idx in indices if idx.get("document_id") == document_id]
         return indices
+    except FileNotFoundError:
+        # If indices directory doesn't exist, return empty array instead of 404
+        return []
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取索引列表失败: {str(e)}")
+        # Log the error but return empty array instead of 500 error
+        # This prevents frontend initialization errors
+        print(f"[API ERROR] Error listing indices: {str(e)}")
+        return []
 
 @router.put("/{index_id}")
 async def update_index(

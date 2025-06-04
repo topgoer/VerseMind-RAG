@@ -61,14 +61,14 @@ export const loadConfig = async () => {
   try {
     // Create and store the loading promise
     loadingPromise = (async () => {
-      console.log('[ConfigLoader] Requesting backend /api/config ...');
+      // console.log('[ConfigLoader] Requesting backend /api/config ...');
       const apiBase = import.meta.env.VITE_API_BASE_URL || '';
       const response = await fetch(`${apiBase}/api/config`);
       if (!response.ok) {
         throw new Error('Failed to fetch backend config: ' + response.statusText);
       }
       const configData = await response.json();
-      console.log('[ConfigLoader] Backend config loaded:', configData);
+      // console.log('[ConfigLoader] Backend config loaded:', configData);
       configCache = configData;
       return configData;
     })();

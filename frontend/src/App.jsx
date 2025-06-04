@@ -1,37 +1,230 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import { useLanguage } from './contexts/LanguageContext';
 import { loadConfig } from './utils/configLoader';
 
-// 从文档ID中提取文件名
-function extractFilenameFromDocId(documentId) {
-  if (!documentId || typeof documentId !== 'string') return null;
+// 检查字符串是否为十六进制ID
+const isHexIdString = (str) => {
+  const hexPattern1 = /^[a-f0-9]{8,}$/i;
+  const hexPattern2 = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+  return hexPattern1.exec(str) || hexPattern2.exec(str);
+};
+
+// 从索引对象获取文档名称
+const getNameFromIndex = (idx) => {
+  if (idx.collection_name) {
+    return `Collection: ${idx.collection_name}`;
+  } else if (idx.document_filename) {
+    return idx.document_filename;
+  } else if (idx.name) {
+    return idx.name;
+  }
+  return null;
+};
+
+// 从rawSearchData尝试获取文档名称
+const getNameFromRawSearchData = (rawSearchData) => {
+  if (rawSearchData?.documentFilename) {
+    return rawSearchData.documentFilename;
+  }
+  if (rawSearchData?.collectionName) {
+    return `Collection: ${rawSearchData.collectionName}`;
+  }
+  return null;
+};
+
+// 从索引信息获取文档名称
+const getNameFromIndexInfo = (indexInfo) => {
+  if (!indexInfo) return null;
   
+  if (indexInfo.collection_name) {
+    return `Collection: ${indexInfo.collection_name}`;
+  }
+  if (indexInfo.document_filename) {
+    return indexInfo.document_filename;
+  }
+  if (indexInfo.name) {
+    return indexInfo.name;
+  }
+  return null;
+};
+
+// 从原始文档ID提取干净的名称
+const getCleanedDocumentId = (documentId) => {
+  if (!documentId) return null;
+  
+  const timestampHashPattern = /(_\d{8}_\d{6}_[a-f0-9]+)$/;
+  let cleanId = documentId.replace(timestampHashPattern, '');
+  
+  const timestampPattern = /_\d{8}$/;
+  if (timestampPattern.test(cleanId)) {
+    cleanId = cleanId.replace(timestampPattern, '');
+  }
+  
+  return (cleanId && cleanId !== documentId) ? cleanId : null;
+};
+
+// 从全局索引匹配检查
+// 检查是否可以获取索引数据
+const canAccessIndices = () => {
+  return typeof window !== 'undefined' && Array.isArray(window.verseMindIndices);
+};
+
+// 通过完全匹配查找索引
+const findExactMatchIndex = (indexId) => {
+  return window.verseMindIndices.find(idx => 
+    idx.index_id === indexId || idx.id === indexId
+  );
+};
+
+// 通过部分匹配查找索引
+const findPartialMatchIndex = (indexId) => {
+  for (const idx of window.verseMindIndices) {
+    if ((idx.index_id?.includes(indexId)) || (idx.id?.includes(indexId))) {
+      const name = getNameFromIndex(idx);
+      if (name) return name;
+    }
+  }
+  return null;
+};
+
+// 从全局索引匹配检查 - 将复杂逻辑拆分为更小的函数
+const getNameFromGlobalIndices = (indexId) => {
+  // 基础验证
+  if (!indexId || !canAccessIndices()) {
+    return null;
+  }
+  
+  // 检查是否是索引ID
+  if (!isHexIdString(indexId)) {
+    return null;
+  }
+  
+  // 尝试完全匹配
+  const matchingIndex = findExactMatchIndex(indexId);
+  if (matchingIndex) {
+    return getNameFromIndex(matchingIndex);
+  }
+  
+  // 尝试部分匹配
+  return findPartialMatchIndex(indexId);
+};
+
+// 尝试从原始文档名获取名称（如果不是索引ID）
+const tryGetNameFromDocumentName = (docContext) => {
+  if (docContext.documentName && docContext.documentName !== 'Unknown') {
+    if (!isHexIdString(docContext.documentName)) {
+      return docContext.documentName;
+    }
+  }
+  return null;
+};
+
+// 尝试从全局索引匹配获取名称
+const tryGetNameFromGlobalMatch = (docContext) => {
+  if (docContext.documentName && docContext.documentName !== 'Unknown') {
+    try {
+      return getNameFromGlobalIndices(docContext.documentName);
+    } catch (err) {
+      console.error("[processDocumentName] Error while trying to find matching index:", err);
+    }
+  }
+  return null;
+};
+
+// 尝试从搜索ID生成名称
+const getNameFromSearchId = (searchId) => {
+  if (searchId) {
+    return `Search: ${searchId.substring(0, 8)}`;
+  }
+  return null;
+};
+
+// 修正：添加一个强化版的文档名称处理函数 - 确保在语言切换和初始渲染时使用相同的逻辑
+// 移除大量日志输出以提高性能和避免控制台垃圾信息
+const processDocumentName = (docContext) => {
+  // 输入验证
+  if (!docContext) {
+    return 'Unknown';
+  }
+  
+  // 按优先级顺序尝试不同的方法获取文档名
+  const nameResolvers = [
+    // 1) rawSearchData中的原始文件名（最高优先级）
+    () => getNameFromRawSearchData(docContext.rawSearchData),
+    
+    // 2) 使用已保存的文档名（如果不是索引ID）
+    () => tryGetNameFromDocumentName(docContext),
+    
+    // 3) 从索引信息获取名称
+    () => getNameFromIndexInfo(docContext.indexInfo),
+    
+    // 4) 从文档ID提取清理后的名称
+    () => docContext.rawSearchData?.documentId 
+          ? getCleanedDocumentId(docContext.rawSearchData.documentId)
+          : null,
+    
+    // 5) 从全局索引信息匹配
+    () => tryGetNameFromGlobalMatch(docContext),
+    
+    // 6) 使用搜索ID作为最后的备选方案
+    () => getNameFromSearchId(docContext.searchId)
+  ];
+  
+  // 尝试每种方法直到找到有效名称
+  for (const resolver of nameResolvers) {
+    const name = resolver();
+    if (name) return name;
+  }
+  
+  // 如果所有方法都失败，返回默认值
+  return 'Unknown';
+};
+
+// 添加全局文档查找函数，确保文档名称在应用程序的不同部分保持一致
+const addToGlobalLookup = (searchId, documentName, collectionName, indexId) => {
+  // 确保文档信息可在全局范围内使用，便于不同组件访问
   try {
-    // 尝试解析格式如 "article_name_20250511_141012_b00ecba1" 的文档ID
-    const parts = documentId.split('_');
-    if (parts.length >= 3) {
-      // 寻找日期部分（通常是数字部分开始的位置）
-      let datePartIndex = -1;
-      for (let i = 0; i < parts.length; i++) {
-        if (/^\d{8}$/.test(parts[i])) {
-          datePartIndex = i;
-          break;
+    if (typeof window !== 'undefined') {
+      // 初始化查询结果查找表（如果尚未存在）
+      if (!window.verseMindDocumentLookup) {
+        window.verseMindDocumentLookup = {};
+      }
+      
+      // 存储这个搜索ID对应的文档信息
+      window.verseMindDocumentLookup[searchId] = {
+        documentName: documentName,
+        collectionName: collectionName,
+        indexId: indexId,
+        timestamp: new Date().toISOString()
+      };
+      
+      // 最多保留最近的50条记录（防止内存泄漏）
+      const keys = Object.keys(window.verseMindDocumentLookup);
+      if (keys.length > 50) {
+        // 获取所有项目并按时间戳排序
+        const items = keys.map(key => ({
+          key,
+          timestamp: window.verseMindDocumentLookup[key].timestamp
+        }));
+        
+        // 按时间戳排序（最早的在前）
+        items.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        // 移除最旧的项目
+        for (let i = 0; i < items.length - 50; i++) {
+          delete window.verseMindDocumentLookup[items[i].key];
         }
       }
       
-      if (datePartIndex > 0) {
-        // 提取日期前的所有部分作为文件名
-        return parts.slice(0, datePartIndex).join('_');
-      }
+      // console.log(`Added document info to global lookup for search ID ${searchId}: "${documentName}"`);
     }
-  } catch (e) {
-    console.error("Error extracting filename from document ID:", e);
+  } catch (err) {
+    console.error("Failed to add to global document lookup:", err);
   }
-  return null;
-}
+};
 
 function App() {
   const { t, language } = useLanguage();
@@ -40,7 +233,7 @@ function App() {
   // Expose setActiveModule to window object for cross-component navigation
   useEffect(() => {
     window.setActiveModule = (moduleName) => {
-      console.log(`[App] Setting active module to: ${moduleName}`);
+      // console.log(`[App] Setting active module to: ${moduleName}`);
       setActiveModule(moduleName);
     };
     
@@ -49,10 +242,1187 @@ function App() {
       window.setActiveModule = undefined;
     };
   }, []);
+  
+  // Clean up object URLs to prevent memory leaks
+  useEffect(() => {
+    // No operation on mount
+    
+    // Only in cleanup function
+    return () => {
+      // We need to use a function form of setChatHistory to get the latest value
+      // and clean up URLs without using chatHistory directly in the cleanup function
+      setChatHistory(currentChatHistory => {
+        // When component unmounts, clean up any object URLs
+        if (currentChatHistory) {
+          currentChatHistory.forEach(message => {
+            // Clean up user uploaded images
+            if (message?.image?.startsWith('blob:')) {
+              URL.revokeObjectURL(message.image);
+            }
+            
+            // Clean up AI generated images if they're blob URLs
+            if (message?.generatedImage?.startsWith('blob:')) {
+              URL.revokeObjectURL(message.generatedImage);
+            }
+          });
+        }
+        return currentChatHistory; // Return unchanged to avoid re-render
+      });
+    };
+  }, []);
+  
+  // 处理模块切换
+  const handleModuleChange = (moduleName) => {
+    // console.log(`[App] Changing module to: ${moduleName} (via sidebar)`);
+    setActiveModule(moduleName);
+  };
+  
+  // 处理文档上传
+  const handleDocumentUpload = async (formData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log('[App] Uploading document...');
+      
+      // 发送POST请求到后端API
+      const response = await fetch('/api/documents/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Failed to upload document');
+      }
+      
+      const result = await response.json();
+      // console.log('[App] Document uploaded successfully:', result);
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: `${t('documentUploaded')}: ${result.filename || 'Unknown'}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 刷新文档列表
+      // console.log(`[App] Refreshing document list after upload...`);
+      await fetchDocuments();
+      
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Document upload error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('uploadError')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 处理文档分块
+  const handleChunkDocument = async (documentId, strategy, chunkSize, overlap) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Chunking document ${documentId} with strategy ${strategy}...`);
+      
+      // Additional validation
+      if (!documentId) {
+        throw new Error('No document ID provided for chunking');
+      }
+      
+      // Check if document exists in our documents list
+      const documentExists = documents.some(doc => doc.id === documentId);
+      if (!documentExists) {
+        console.warn(`[App] Warning: Attempting to chunk document ${documentId} that is not in the documents list`);
+        // console.log('[App] Available documents:', documents.map(doc => ({ id: doc.id, filename: doc.filename })));
+      }
+      
+      // 发送POST请求到后端API
+      const response = await fetch('/api/chunks/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: documentId,
+          strategy,
+          chunk_size: parseInt(chunkSize),
+          overlap: parseInt(overlap)
+        }),
+      });
+      
+      if (!response.ok) {
+        let errorMessage = 'Failed to chunk document';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+          console.error('[App] Server returned error:', errorData);
+        } catch (e) {
+          console.error('[App] Could not parse error response:', e);
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const result = await response.json();
+      // console.log('[App] Document chunking successful:', result);
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: `${t('documentChunked')}: ${result.total_chunks || 0} ${t('chunks')}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 刷新分块列表
+      // console.log('[App] Refreshing chunks list after chunking');
+      await fetchChunks();
+      
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Document chunking error:', err);
+      
+      // Enhanced error logging
+      console.error(`[App] Chunking details - Document ID: ${documentId}, Strategy: ${strategy}, ChunkSize: ${chunkSize}, Overlap: ${overlap}`);
+      
+      // Try to parse more detailed error information if available
+      let errorMessage = err.message || 'Failed to chunk document';
+      try {
+        if (err.message && err.message.includes('{')) {
+          const jsonStart = err.message.indexOf('{');
+          const errorData = JSON.parse(err.message.substring(jsonStart));
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          }
+        }
+      } catch (parseErr) {
+        console.warn('[App] Failed to parse error details:', parseErr);
+      }
+      
+      setError(errorMessage);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('chunkingFailed')}: ${errorMessage}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+
+  // 处理分块删除
+  const handleChunkDelete = async (chunkId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Deleting chunk ${chunkId}...`);
+      
+      // 发送DELETE请求到后端API
+      const response = await fetch(`/api/chunks/${chunkId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete chunk');
+      }
+      
+      // console.log('[App] Chunk deletion successful');
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: t('chunkDeleted')
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 更新本地状态
+      setChunks(prevChunks => prevChunks.filter(chunk => chunk.id !== chunkId));
+      
+      setLoading(false);
+    } catch (err) {
+      console.error('[App] Chunk deletion error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('deleteFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+
+  // 处理文档解析
+  const handleParseDocument = async (documentId, strategy, extractTables, extractImages) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Parsing document ${documentId}...`);
+      
+      // 发送POST请求到后端API
+      const response = await fetch('/api/parse/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: documentId,
+          strategy,
+          extract_tables: extractTables,
+          extract_images: extractImages
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to parse document');
+      }
+      
+      const result = await response.json();
+      // console.log('[App] Document parsing successful:', result);
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: `${t('documentParsed')}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Document parsing error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('parsingFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 处理向量嵌入
+  const handleCreateEmbeddings = async (documentId, provider, model) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Creating embeddings for document ${documentId}...`);
+      
+      // 发送POST请求到后端API
+      const API_URL = '/api/embeddings/create';
+      // console.log(`[App] Sending POST to ${API_URL} with provider=${provider}, model=${model}`);
+      
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: documentId,
+          provider,
+          model
+        }),
+      });
+      
+      if (!response.ok) {
+        let errorMessage = 'Failed to create embeddings';
+        
+        // Handle specific error codes
+        if (response.status === 404) {
+          errorMessage = 'API endpoint not found. Check that the backend is running correctly.';
+          console.error(`[App] API endpoint not found (404): ${API_URL}`);
+        }
+        
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch (parseError) {
+          console.error('[App] Error parsing error response:', parseError);
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      const result = await response.json();
+      // console.log('[App] Embeddings creation successful:', result);
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: `${t('embeddingsCreated')}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 刷新嵌入列表
+      await fetchEmbeddings();
+      
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Embeddings creation error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('embeddingFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 处理嵌入删除
+  const handleEmbeddingDelete = async (embeddingId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Deleting embedding ${embeddingId}...`);
+      
+      // 发送DELETE请求到后端API
+      const response = await fetch(`/api/embeddings/${embeddingId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete embedding');
+      }
+      
+      // console.log('[App] Embedding deletion successful');
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: t('embeddingDeleted')
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 更新本地状态
+      setEmbeddings(prevEmbeddings => 
+        prevEmbeddings.filter(emb => emb.embedding_id !== embeddingId)
+      );
+      
+      setLoading(false);
+    } catch (err) {
+      console.error('[App] Embedding deletion error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('deleteFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 获取嵌入列表
+  const fetchEmbeddings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log('[App] Fetching embeddings...');
+      
+      // 发送GET请求到后端API
+      const response = await fetch('/api/embeddings/list');
+      
+      if (!response.ok) {
+        // Don't treat 404 (not found) as an error for empty embedding folder
+        if (response.status === 404) {
+          // console.log('[App] No embeddings found (404)');
+          setEmbeddings([]);
+          setLoading(false);
+          return [];
+        }
+        
+        let errorMessage = 'Failed to fetch embeddings';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (parseError) {
+          console.error('[App] Error parsing error response:', parseError);
+        }
+        throw new Error(errorMessage);
+      }
+      
+      let result;
+      try {
+        result = await response.json();
+        // Validate that result is an array
+        if (!Array.isArray(result)) {
+          console.warn('[App] Embeddings result is not an array:', result);
+          result = [];
+        }
+      } catch (parseError) {
+        console.error('[App] Error parsing embeddings response:', parseError);
+        result = [];
+      }
+      
+      // console.log('[App] Fetched embeddings:', result.length);
+      
+      setEmbeddings(result);
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Fetch embeddings error:', err);
+      setError(err.message);
+      setLoading(false);
+      // Return empty array instead of throwing to prevent component errors
+      return [];
+    }
+  };
+  
+  // 处理索引创建
+  const handleCreateIndex = async (documentId, vectorDb, embeddingId, collectionName, indexName) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Creating index for document ${documentId} with embedding ${embeddingId}...`);
+      
+      // 发送POST请求到后端API
+      const response = await fetch('/api/indices/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: documentId,
+          embedding_id: embeddingId,
+          vector_db: vectorDb,
+          collection_name: collectionName,
+          index_name: indexName
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to create index');
+      }
+      
+      const result = await response.json();
+      // console.log('[App] Index creation successful:', result);
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: `${t('indexCreated')}: ${indexName || collectionName}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 刷新索引列表
+      await fetchIndices();
+      
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Index creation error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('indexingFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 获取索引列表
+  const fetchIndices = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log('[App] Fetching indices...');
+      
+      // 发送GET请求到后端API
+      const response = await fetch('/api/indices/list', {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      // console.log('[App] API response status:', response.status);
+      
+      if (!response.ok) {
+        let errorMessage = 'Failed to fetch indices';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorData.detail || errorMessage;
+        } catch (jsonError) {
+          console.error('[App] Error parsing error response:', jsonError);
+          errorMessage = `Server responded with status ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const result = await response.json();
+      // console.log('[App] Fetched indices:', result);
+      
+      // Debug: Log collection names from the response
+      if (Array.isArray(result)) {
+        const collections = [...new Set(result
+          .filter(idx => idx?.collection_name)
+          .map(idx => idx.collection_name))];
+        // console.log('[App] Collection names found in API response:', collections);
+        // console.log('[App] Total indices found:', result.length);
+        
+        // Log the first index to see its structure
+        if (result.length > 0) {
+          // console.log('[App] First index structure:', result[0]);
+        } else {
+          console.warn('[App] No indices found in the API response');
+        }
+      } else {
+        console.error('[App] API response is not an array:', result);
+      }
+      
+      // 将索引信息保存到全局变量，以供文档名称解析使用
+      if (typeof window !== 'undefined') {
+        window.verseMindIndices = result;
+      }
+      
+      setIndices(result);
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Fetch indices error:', err);
+      setError(`Failed to fetch indices: ${err.message}`);
+      
+      // Set indices to an empty array to prevent undefined errors
+      setIndices([]);
+      setLoading(false);
+      throw err;
+    }
+  };
+  
+  // 获取文档列表
+  const fetchDocuments = async () => {
+    try {
+      // console.log('[App] Fetching documents list...');
+      const response = await fetch('/api/documents/list');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch documents: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      // console.log(`[App] Fetched ${data.length} documents`);
+      setDocuments(data);
+      return data;
+    } catch (err) {
+      console.error('[App] Error fetching documents:', err);
+      // Don't override existing errors from other operations
+      if (!error) {
+        setError(err.message);
+      }
+      return [];
+    }
+  };
+  
+  // 处理索引删除
+  const handleIndexDelete = async (indexId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Deleting index ${indexId}...`);
+      
+      // 发送DELETE请求到后端API
+      const response = await fetch(`/api/indices/${indexId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete index');
+      }
+      
+      // console.log('[App] Index deletion successful');
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: t('indexDeleted')
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 更新本地状态
+      setIndices(prevIndices => 
+        prevIndices.filter(idx => idx.index_id !== indexId)
+      );
+      
+      setLoading(false);
+    } catch (err) {
+      console.error('[App] Index deletion error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('deleteFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // Get list of document IDs that have been chunked
+  const getChunkedDocumentIds = () => {
+    if (!Array.isArray(chunks)) return [];
+    
+    // Extract unique document IDs from chunks
+    const docIds = [...new Set(chunks.map(chunk => chunk.document_id))];
+    // console.log(`[App] Found ${docIds.length} chunked document IDs`);
+    return docIds;
+  };
+  
+  // 处理文档删除
+  const handleDocumentDelete = async (documentId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Deleting document ${documentId}...`);
+      // console.log(`[App] Current documents before deletion:`, documents.length);
+      
+      // 发送DELETE请求到后端API
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[App] Document deletion API error (${response.status}):`, errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.detail || errorData.message || 'Failed to delete document');
+        } catch (parseError) {
+          throw new Error(`Failed to delete document: ${response.status} ${errorText || response.statusText}`);
+        }
+      }
+      
+      // console.log('[App] Document deletion successful');
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: t('documentDeleted')
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // Update local status - remove document and related resources
+      setDocuments(prevDocs => 
+        prevDocs.filter(doc => doc.id !== documentId)
+      );
+      setChunks(prevChunks => 
+        prevChunks.filter(chunk => chunk.document_id !== documentId)
+      );
+      setEmbeddings(prevEmbeddings => 
+        prevEmbeddings.filter(emb => emb.document_id !== documentId)
+      );
+      setIndices(prevIndices => 
+        prevIndices.filter(idx => idx.document_id !== documentId)
+      );
+      
+      // Refresh document list to ensure UI is up to date
+      // console.log(`[App] Refreshing document list after deletion...`);
+      await fetchDocuments();
+      
+      setLoading(false);
+    } catch (err) {
+      console.error('[App] Document deletion error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('deleteFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 处理文档搜索
+  const handleSearch = async (indexId, query, topK = 5, threshold = 0.7, minChars = 100, collectionName = null) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // If a collection was specified, modify the search logic
+      if (collectionName) {
+        // console.log(`[App] Searching collection ${collectionName} for "${query}"...`);
+        
+        // Get indices belonging to this collection
+        const collectionIndices = indices.filter(idx => idx.collection_name === collectionName);
+        
+        if (!collectionIndices || collectionIndices.length === 0) {
+          throw new Error(`No indices found in collection: ${collectionName}`);
+        }
+        
+        // Use the first index as a starting point (or the selected index if provided)
+        const targetIndexId = indexId || collectionIndices[0].index_id;
+        
+        // Send POST request with the collection name as the index_id_or_collection parameter
+        const response = await fetch('/api/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            index_id_or_collection: collectionName, // Use collection name directly
+            query,
+            top_k: topK,
+            similarity_threshold: threshold,
+            min_chars: minChars
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to search collection');
+        }
+        
+        const result = await response.json();
+        // console.log('[App] Collection search successful:', result);
+        
+        // Add collection name to the result for UI display
+        result.collectionName = collectionName;
+        
+        // 添加消息通知
+        const resultCount = result.results?.length || 0;
+        setNotification({
+          type: 'success',
+          message: `${t('searchCompleted')}: ${resultCount} ${t('resultsFound')} ${t('inCollection')}: ${collectionName}`
+        });
+        
+        // 清除通知
+        setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+        
+        // 保存搜索结果
+        setSearchResults(result);
+        setCurrentSearchResult(result);
+        
+        setLoading(false);
+        return result;
+      } else {
+        // Original single-index search logic
+        // console.log(`[App] Searching index ${indexId} for "${query}"...`);
+        
+        // 发送POST请求到后端API
+        const response = await fetch('/api/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            index_id_or_collection: indexId, // Use consistent parameter name
+            query,
+            top_k: topK,
+            similarity_threshold: threshold,
+            min_chars: minChars
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to search index');
+        }
+        
+        const result = await response.json();
+        // console.log('[App] Search successful:', result);
+        
+        // 添加消息通知
+        const resultCount = result.results?.length || 0;
+        setNotification({
+          type: 'success',
+          message: `${t('searchCompleted')}: ${resultCount} ${t('resultsFound')}`
+        });
+        
+        // 清除通知
+        setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+        
+        // 保存搜索结果
+        setSearchResults(result);
+        setCurrentSearchResult(result);
+        
+        setLoading(false);
+        return result;
+      }
+    } catch (err) {
+      console.error('[App] Search error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('searchFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 处理文本生成
+  const handleGenerateText = async (searchId, prompt, provider, model, temperature = 0.7, maxTokens = null) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // console.log(`[App] Generating text for search ${searchId} with model ${model}...`);
+      
+      // 发送POST请求到后端API
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          search_id: searchId,
+          prompt,
+          provider,
+          model,
+          temperature,
+          max_tokens: maxTokens
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to generate text');
+      }
+      
+      const result = await response.json();
+      // console.log('[App] Text generation successful:', result);
+      
+      // 添加消息通知
+      setNotification({
+        type: 'success',
+        message: `${t('textGenerated')}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 3000);
+      
+      // 保存生成结果
+      setGeneratedText(result);
+      
+      setLoading(false);
+      return result;
+    } catch (err) {
+      console.error('[App] Text generation error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('generationFailed')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
+  
+  // 处理选择文档
+  const handleSelectDocument = (documentOrId) => {
+    // If a string (document ID) is passed, find the document in the documents array
+    if (typeof documentOrId === 'string') {
+      const document = documents.find(doc => doc.id === documentOrId);
+      if (document) {
+        setSelectedDocument(document);
+        setSelectedDocumentId(document.id);
+        // console.log(`[App] Selected document by ID: ${document.id} (${document.filename})`);
+      } else {
+        console.error(`[App] Could not find document with ID: ${documentOrId}`);
+      }
+    } else {
+      // Handle document object directly
+      setSelectedDocument(documentOrId);
+      setSelectedDocumentId(documentOrId?.id || null);
+      // console.log(`[App] Selected document: ${documentOrId?.id || 'none'}`);
+    }
+  };
+  
+  // 处理搜索和生成（聊天模式）
+  const handleSearchAndGenerate = async (indexId, message, provider, model, selectedImage = null, searchParams = {}) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Default temperature value if not provided in searchParams
+      const temperature = searchParams?.temperature || 0.7;
+      
+      // console.log(`[App] Processing chat message: "${message}" with index ${indexId}`);
+      
+      // 添加用户消息到聊天历史
+      const userMessage = {
+        sender: 'user',
+        text: message,
+        timestamp: new Date().toLocaleString(),
+        id: `user-${Date.now()}`
+      };
+      
+      // If there's an image, create an object URL and add it to the message
+      if (selectedImage) {
+        userMessage.image = URL.createObjectURL(selectedImage);
+      }
+      
+      setChatHistory(prev => [...prev, userMessage]);
+      
+      // 步骤1：搜索
+      let searchResult = null;
+      let documentContext = null;
+      
+      if (indexId) {
+        // Get search parameters from searchParams or use defaults
+        const topK = searchParams.topK || 5;
+        const similarityThreshold = searchParams.similarityThreshold || 0.7;
+        const inputType = searchParams.inputType || 'index_id';
+        
+        // console.log(`[App] Searching with ${inputType === 'collection_name' ? 'collection' : 'index'} ${indexId} for relevant information...`);
+        
+        // 发送POST请求到后端API
+        const searchResponse = await fetch('/api/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            index_id_or_collection: indexId, // Use consistent parameter name
+            query: message,
+            top_k: topK,
+            similarity_threshold: similarityThreshold
+          }),
+        });
+        
+        if (!searchResponse.ok) {
+          const errorData = await searchResponse.json();
+          throw new Error(errorData.message || 'Failed to search index');
+        }
+        
+        searchResult = await searchResponse.json();
+        setCurrentSearchResult(searchResult);
+        
+        // 准备文档上下文信息
+        if (searchResult) {
+          // 获取索引信息
+          const indexInfo = indices.find(idx => idx.index_id === indexId);
+          
+          // 构建文档上下文
+          documentContext = {
+            searchId: searchResult.search_id,
+            documentName: indexInfo?.document_filename || indexInfo?.collection_name || indexId,
+            indexInfo: indexInfo,
+            rawSearchData: searchResult,
+            similarities: searchResult.results?.map(r => r.similarity).filter(Boolean)
+          };
+        }
+      }
+      
+      // 步骤2：生成文本
+      // console.log(`[App] Generating AI response with model ${model}...`);
+      
+      const generateBody = {
+        prompt: message,
+        provider,
+        model,
+        temperature
+      };
+      
+      // 如果有搜索结果，使用搜索ID
+      if (searchResult?.search_id) {
+        generateBody.search_id = searchResult.search_id;
+      }
+      
+      // If there's an image, convert it to base64 and add it to the request
+      if (selectedImage) {
+        try {
+          // Convert the image to base64
+          const reader = new FileReader();
+          // Use a promise to handle the async FileReader
+          const imageData = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error('Failed to read image file'));
+            reader.readAsDataURL(selectedImage);
+          });
+          
+          // Extract just the base64 part without the data:image prefix
+          const base64Data = imageData.split(',')[1];
+          generateBody.image_data = base64Data;
+        } catch (imgErr) {
+          console.error('[App] Error processing image:', imgErr);
+          // Continue without the image if processing fails
+        }
+      }
+      
+      // Send the generation request
+      const generateResponse = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(generateBody),
+      });
+      
+      if (!generateResponse.ok) {
+        const errorData = await generateResponse.json();
+        throw new Error(errorData.message || 'Failed to generate response');
+      }
+      
+      const generateResult = await generateResponse.json();
+      // console.log('[App] Generation successful:', generateResult);
+      
+      // 添加AI回复到聊天历史
+      const aiMessage = {
+        sender: 'ai',
+        text: generateResult.generated_text,
+        originalContent: generateResult.generated_text, // 保存原始LLM响应，避免被后续处理破坏
+        timestamp: new Date().toLocaleString(),
+        model: generateResult.model,
+        id: `ai-${Date.now()}`,
+        search_id: searchResult?.search_id,
+        documentContext: documentContext
+      };
+      
+      // Only include generated images from the model, not the uploaded image
+      // This prevents duplicate images in the chat (following test-image-display.ps1 guidance)
+      
+      // If the model returned an image (for models that can generate images)
+      if (generateResult.generated_image) {
+        aiMessage.generatedImage = generateResult.generated_image;
+      }
+      
+      // Add a reference that this message was in response to an image
+      if (selectedImage) {
+        aiMessage.respondsToImage = true;
+      }
+      
+      setChatHistory(prev => [...prev, aiMessage]);
+      
+      // 如果有搜索ID和文档名，添加到全局查找表
+      if (searchResult?.search_id && documentContext?.documentName) {
+        addToGlobalLookup(
+          searchResult.search_id, 
+          documentContext.documentName,
+          documentContext.indexInfo?.collection_name,
+          indexId
+        );
+      }
+      
+      setLoading(false);
+      return aiMessage;
+    } catch (err) {
+      console.error('[App] Chat processing error:', err);
+      setError(err.message);
+      setLoading(false);
+      
+      
+      // 添加错误通知
+      setNotification({
+        type: 'error',
+        message: `${t('chatError')}: ${err.message}`
+      });
+      
+      // 清除通知
+      setTimeout(() => setNotification({ type: '', message: '' }), 5000);
+      
+      throw err;
+    }
+  };
 
   const [documents, setDocuments] = useState([]);
   const [chunks, setChunks] = useState([]);
   const [chunksLoading, setChunksLoading] = useState(false); // New state for chunks loading
+  const [chunksError, setChunksError] = useState(null); // New state for chunks error
   const [selectedDocumentId, setSelectedDocumentId] = useState(null); // Added for demonstration
   // Removing unused state variables for parsed document content and loading
   const [embeddings, setEmbeddings] = useState([]);
@@ -65,10 +1435,10 @@ function App() {
   const [chatHistory, setChatHistory] = useState([
     { 
       sender: 'system', 
-      text: 'Welcome to VerseMind-RAG! Select an index and ask questions about your documents. You can also request tasks like "extract page 5 and generate a summary".',
+      text: t('welcomeMessage'),
       timestamp: new Date().toLocaleString(), 
       model: 'System',
-      id: 'system-welcome-en'
+      id: 'system-welcome'
     }
   ]);
   const [config, setConfig] = useState(null);
@@ -79,1269 +1449,181 @@ function App() {
   const [taskProgress, setTaskProgress] = useState('');
   // Removed unused notificationRef
 
+  // Load config and initial data
   useEffect(() => {
-    loadConfig().then(cfg => {
-      setConfig(cfg);
-      setConfigLoading(false);
-    });
-  }, []);
-
-  // Define fetchChunks using useCallback
-  const fetchChunks = useCallback(async (documentId) => {
-    if (!documentId) {
-      setChunks([]); // Clear chunks if no documentId
-      return;
-    }
-    setChunksLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      // Use the correct API endpoint path - /api/chunks/{document_id}
-      const response = await fetch(`${apiBase}/api/chunks/${documentId}`);
-      
-      // Handle non-200 responses
-      if (!response.ok) {
-        let errorDetail = '';
-        try {
-          const errorData = await response.json();
-          errorDetail = errorData.detail || JSON.stringify(errorData);
-        } catch (e) {
-          console.warn('Failed to parse error response as JSON:', e.message);
-          
-          try {
-            const text = await response.text();
-            errorDetail = text || `Server error: ${response.status} (empty response)`;
-            // Truncate long error messages
-            if (errorDetail.length > 200) {
-              errorDetail = errorDetail.substring(0, 200) + '... [content truncated]';
-            }
-          } catch (textErr) {
-            console.error('Failed to read error response as text:', textErr.message);
-            errorDetail = `Server error: ${response.status} (cannot read response text)`;
-          }
-        }
-        console.error('Failed to fetch chunks:', response.status, errorDetail);
-        throw new Error(`Failed to fetch chunks for document ${documentId}. Status: ${response.status}`);
+    const initializeApp = async () => {
+      try {
+        // Load configuration
+        const cfg = await loadConfig();
+        setConfig(cfg);
+        setConfigLoading(false);
+        
+        // Load indices data for collections
+        // console.log('[App] Initial load - fetching indices data...');
+        const indicesData = await fetchIndices();
+        
+        // Add diagnostic info after loading indices
+        // console.log('[App] Initialization completed - indices loaded:', 
+        //   Array.isArray(indicesData) ? indicesData.length : 'none',
+        //   'collections:', 
+        //   Array.isArray(indicesData) 
+        //     ? [...new Set(indicesData.filter(i => i.collection_name).map(i => i.collection_name))]
+        //     : 'none'
+        // );
+        
+        // Load document list
+        await fetchDocuments();
+        // Optionally load embeddings
+        // await fetchEmbeddings();
+      } catch (err) {
+        console.error('[App] Error during app initialization:', err);
+        setError('Failed to initialize application data');
       }
-      
-      // Try to parse JSON response
+    };
+    
+    initializeApp();
+  }, []);
+  
+  // Function to fetch chunks
+  const fetchChunks = async () => {
+    // console.log('[App] Fetching chunks list');
+    setChunksLoading(true); // Set loading state
+    try {
+      const response = await fetch('/api/chunks/list');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch chunks: ${response.status} ${response.statusText}`);
+      }
       const data = await response.json();
-      console.log(`Fetched ${Array.isArray(data) ? data.length : 0} chunks for document ${documentId}`);
-      setChunks(Array.isArray(data) ? data : []); // Ensure data is an array
+      // console.log(`[App] Fetched ${data.length} chunks`);
+      setChunks(data);
     } catch (err) {
-      console.error('Error fetching chunks:', err);
-      setError(err.message || 'An unknown error occurred while fetching chunks.');
-      setChunks([]); // Clear chunks on error
+      console.error('[App] Error fetching chunks list:', err);
+      setChunksError(err.message);
     } finally {
       setChunksLoading(false);
     }
-  }, [setChunks, setChunksLoading, setError]); // Dependencies for useCallback
-
-  // Define fetchParsed using useCallback
-  const fetchParsed = useCallback(async (documentId) => {
-    if (!documentId) {
-      return null; // Return null if no documentId
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      // Use the correct API endpoint path with proper API base URL
-      const response = await fetch(`${apiBase}/api/parse/${documentId}`);
-      
-      // Handle non-200 responses
-      if (!response.ok) {
-        let errorDetail = '';
-        try {
-          const errorData = await response.json();
-          errorDetail = errorData.detail || JSON.stringify(errorData);
-        } catch (e) {
-          console.warn('Failed to parse error response as JSON:', e.message);
-          try {
-            const text = await response.text();
-            errorDetail = text || `Server error: ${response.status} (empty response)`;
-            // Truncate long error messages
-            if (errorDetail.length > 200) {
-              errorDetail = errorDetail.substring(0, 200) + '... [content truncated]';
-            }
-          } catch (textErr) {
-            console.error('Failed to read error response as text:', textErr.message);
-            errorDetail = `Server error: ${response.status} (cannot read response text)`;
-          }
-        }
-        console.error('Failed to fetch parsed document content:', response.status, errorDetail);
-        throw new Error(`Failed to fetch parsed document content for document ${documentId}. Status: ${response.status}`);
-      }
-      
-      // Try to parse JSON response
-      const data = await response.json();
-      console.log(`Fetched parsed content for document ${documentId}`);
-      return data; // Return the data directly
-    } catch (err) {
-      console.error('Error fetching parsed document content:', err);
-      setError(err.message || 'An unknown error occurred while fetching parsed document content.');
-      return null; // Return null on error
-    } finally {
-      setLoading(false);
-    }
-  }, [setError, setLoading]); // Dependencies for useCallback
-
-  // Define fetchEmbeddings using useCallback
-  const fetchEmbeddings = useCallback(async (documentId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      // Use the correct endpoint with query parameter instead of path parameter
-      const url = documentId 
-        ? `${apiBase}/api/embeddings/list?document_id=${encodeURIComponent(documentId)}`
-        : `${apiBase}/api/embeddings/list`;
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        let errorText;
-        try {
-          const errorData = await response.json();
-          errorText = JSON.stringify(errorData);
-        } catch (e) {
-          // Handle the exception more explicitly
-          try {
-            errorText = await response.text();
-          } catch (textError) {
-            errorText = `Failed to read error response: ${textError.message}`;
-            console.error('Failed to parse error response as text:', textError);
-          }
-        }
-        console.error('Failed to fetch embeddings:', response.status, errorText);
-        throw new Error(`Failed to fetch embeddings${documentId ? ` for document ${documentId}` : ''}. Status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      setEmbeddings(Array.isArray(data) ? data : []); // Ensure data is an array
-    } catch (err) {
-      console.error('Error fetching embeddings:', err);
-      setError(err.message || 'An unknown error occurred while fetching embeddings.');
-      setEmbeddings([]); // Clear embeddings on error
-    } finally {
-      setLoading(false);
-    }
-  }, [setEmbeddings, setLoading, setError]); // Dependencies for useCallback
-
-  // Define fetchIndices using useCallback
-  const fetchIndices = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/indices/list`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Failed to fetch indices:', response.status, errorText);
-        throw new Error(`Failed to fetch indices. Status: ${response.status}`);
-      }
-      const data = await response.json();
-      setIndices(Array.isArray(data) ? data : []); // Ensure data is an array
-    } catch (err) {
-      console.error('Error fetching indices:', err);
-      setError(err.message || 'An unknown error occurred while fetching indices.');
-      setIndices([]); // Clear indices on error
-    } finally {
-      setLoading(false);
-    }
-  }, [setIndices, setLoading, setError]); // Dependencies for useCallback
-
-  // useEffect to call fetchChunks when selectedDocumentId changes
-  useEffect(() => {
-    if (selectedDocumentId) {
-      fetchChunks(selectedDocumentId);
-    } else {
-      setChunks([]); // Clear chunks if no document is selected
-    }
-  }, [selectedDocumentId, fetchChunks]);
-
-  useEffect(() => {
-    setChatHistory(prevMessages => {
-      const welcomeMessage = {
-        id: `system-welcome-${language}`,
-        sender: 'system',
-        text: t('welcomeMessage'),
-        timestamp: new Date().toLocaleString(),
-        model: 'System'
-      };
-      
-      if (prevMessages.length > 0 && prevMessages[0].sender === 'system' && 
-          (prevMessages[0].id?.startsWith('system-welcome-') || prevMessages[0].text.includes('Welcome to VerseMind-RAG'))) {
-        return [welcomeMessage, ...prevMessages.slice(1)];
-      }
-      
-      return [welcomeMessage, ...prevMessages];
-    });
-  }, [language, t]);
-
-  const triggerNotification = (message, type = 'success') => {
-    setNotification({ type, message });
-    setTimeout(() => {
-      setNotification({ type: '', message: '' });
-    }, 3000);
   };
 
-  const fetchDocuments = useCallback(async () => {
-    console.log('[App.jsx fetchDocuments] Starting to fetch documents...');
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/documents/list`);
-
-      if (!response.ok) {
-        let errorDetail = `Failed to fetch documents. Status: ${response.status}`;
-        try {
-          const errorData = await response.json(); 
-          errorDetail = errorData.detail || JSON.stringify(errorData);
-        } catch (e) {
-          console.warn('Failed to parse error response as JSON:', e.message);
-          try {
-            const text = await response.text();
-            errorDetail = text || `Server error: ${response.status} (empty response)`;
-          } catch (textErr) {
-            console.error('Failed to read error response as text:', textErr.message);
-            errorDetail = `Server error: ${response.status} (cannot read response text)`;
-          }
-        }
-        console.error('[App.jsx fetchDocuments] Error response from API. Status:', response.status, 'Details:', errorDetail);
-        throw new Error(errorDetail);
-      }
-
-      const data = await response.json();
-      console.log('[App.jsx fetchDocuments] Received data from API /api/documents/list:', data);
-
-      const sanitizedDocs = Array.isArray(data) ? data.map(doc => ({
-        id: String(doc.id ?? doc.filename ?? `generated_${Math.random().toString(36).substr(2, 9)}`),
-        filename: String(doc.filename ?? t('unknownFilename')),
-        file_type: String(doc.file_type ?? 'unknown').toLowerCase(),
-        size: Number(doc.size ?? 0),
-        upload_time: String(doc.upload_time ?? ''),
-        page_count: Number(doc.page_count ?? 0),
-        description: String(doc.description ?? ''),
-        preview: String(doc.preview ?? ''),
-        metadata: doc.metadata && typeof doc.metadata === 'object' ? doc.metadata : {},
-        saved_as: String(doc.saved_as ?? ''),
-        path: String(doc.path ?? ''),
-        text: String(doc.text ?? ''),
-        page_map: Array.isArray(doc.page_map) ? doc.page_map : [],
-      })) : [];
-
-      if (!Array.isArray(data)) {
-        console.warn('[App.jsx fetchDocuments] API /api/documents/list did not return an array. Received:', data, 'Setting documents to empty array.');
-        setError(t('error.fetchDocsUnexpectedFormat') || 'Error: Document list from server was not in the expected format.');
-        setDocuments([]);
-      } else {
-        console.log('[App.jsx fetchDocuments] Setting sanitized documents. Count:', sanitizedDocs.length);
-        setDocuments(sanitizedDocs);
-        setError(null); 
-      }
-
-    } catch (err) {
-      console.error('[App.jsx fetchDocuments] Error caught during fetchDocuments:', err);
-      const errorMessage = err.message || t('error.fetchDocsFailed') || 'Failed to fetch documents due to an unexpected error.';
-      setError(errorMessage); 
-      setDocuments([]); 
-      triggerNotification(errorMessage, 'error');
-    } finally {
-      console.log('[App.jsx fetchDocuments] Fetch documents process finished.');
-      setLoading(false);
-    }
-  }, [setLoading, setError, setDocuments, t]);
-
-  const handleDocumentUpload = useCallback(async (formData) => {
-    setLoading(true);
-    setError(null);
-    triggerNotification('', ''); 
-
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/documents/upload`, {
-        method: 'POST',
-        body: formData,
+  // Add effect to load documents when entering the document-related modules
+  useEffect(() => {
+    if (activeModule === 'load' || activeModule === 'chunk' || activeModule === 'parse' || activeModule === 'embedding') {
+      // console.log(`[App] Loading documents for ${activeModule} module`);
+      fetchDocuments().catch(err => {
+        console.error(`[App] Error loading documents for ${activeModule} module:`, err);
       });
       
-      // Clone the response to be able to use both text and json parsing if needed
-      const responseClone = response.clone();
-      
-      // First try to parse as JSON, which is the expected format
-      try {
-        const responseData = await response.json();
-        
-        if (!response.ok) {
-          const detailMessage = (typeof responseData === 'object' && responseData !== null && responseData.detail) 
-                                ? String(responseData.detail) 
-                                : `Failed upload status: ${response.status}`;
-          throw new Error(`Failed to upload document. Status: ${response.status}. Detail: ${detailMessage}`);
-        }
-        
-        // On success, trigger notification and return the data
-        console.log('[App.jsx handleDocumentUpload] Document upload successful. Status:', response.status);
-        
-        // Only log a truncated version of the response to avoid huge logs
-        const summaryData = {
-          id: responseData.id,
-          filename: responseData.filename,
-          size: responseData.size,
-          status: 'success'
-        };
-        console.log('Response summary:', JSON.stringify(summaryData));
-        
-        triggerNotification('Document uploaded successfully!');
-        await fetchDocuments(); // Refresh the document list
-        return responseData;
-      } catch (jsonError) {
-        console.error('[App.jsx handleDocumentUpload] JSON parsing error:', jsonError.message);
-        // If JSON parsing fails, try to get text content for debugging
-        let errorTextContent = 'Failed to retrieve response content';
-        try {
-          errorTextContent = await responseClone.text();
-          // Truncate long error messages to avoid flooding the console
-          if (errorTextContent && errorTextContent.length > 200) {
-            errorTextContent = errorTextContent.substring(0, 200) + '... [content truncated]';
-          }
-        } catch (textErr) {
-          console.warn('[App.jsx handleDocumentUpload] Error reading response text:', textErr.message);
-        }
-        
-        console.error(
-          '[App.jsx handleDocumentUpload] Error parsing JSON response. Status:', response.status, 
-          'Error:', String(jsonError), 
-          'Response text preview:', errorTextContent
-        );
-        
-        if (!response.ok) {
-          throw new Error(`Server error during upload: ${response.status}. Details: [API Error]`);
-        }
-        throw new Error(`Error handling server response (status ${response.status}). Details: [JSON Parse Error]`);
+      // Fetch chunks list for several modules that need to work with chunks
+      if (activeModule === 'chunk' || activeModule === 'parse' || activeModule === 'embedding') {
+        // console.log(`[App] Fetching chunks for ${activeModule} module`);
+        fetchChunks();
       }
-    } catch (err) {
-      const originalErrorMessage = (typeof err === 'object' && err !== null && err.message) ? String(err.message) : String(err);
-      console.error('[App.jsx handleDocumentUpload] Error caught during document upload:', originalErrorMessage);
-      
-      let displayMessage;
-      try {
-        displayMessage = originalErrorMessage || (typeof t === 'function' ? t('error.uploadFailed') : 'An unexpected error occurred during document upload.');
-      } catch (tError) {
-        displayMessage = originalErrorMessage || 'An unexpected error occurred during document upload.';
-      }
-
-      triggerNotification(displayMessage, 'error');
-      setError(displayMessage);
-      throw err;
-    } finally {
-      setLoading(false); 
     }
-  }, [setLoading, setError, t, fetchDocuments]);
+  }, [activeModule]);
+  
+  // Add a new useEffect to update message translations when language changes
+  // 添加处理标记，避免过度重新渲染和重复处理文档名称
+  useEffect(() => {
+    if (chatHistory.length === 0) return;
 
-  const handleDocumentDelete = useCallback(async (documentId) => {
-    setLoading(true);
-    triggerNotification('', ''); 
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/documents/${documentId}`, {
-        method: 'DELETE',
-      });
-      const responseData = await response.json();
-      if (!response.ok) {
-        throw new Error(responseData.detail || `Failed to delete document. Status: ${response.status}`);
-      }
-      triggerNotification(responseData.message || 'Document deleted successfully!');
-      await fetchDocuments(); 
-      return responseData;
-    } catch (err) {
-      console.error('Error deleting document in App.jsx:', err);
-      triggerNotification(err.message || 'An unexpected error occurred during document deletion.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchDocuments, setLoading, t]);
-
-  const handleSelectDocument = useCallback((docId) => {
-    if (!docId) {
-      setSelectedDocument(null);
-      setSelectedDocumentId(null);
-      return;
-    }
-    const doc = documents.find(d => d.id === docId);
-    setSelectedDocument(doc || null);
-    setSelectedDocumentId(docId);
-  }, [documents]);
-
-  const handleParseDocument = useCallback(async (documentId, strategy, extractTables = false, extractImages = false) => {
-    setLoading(true);
-    triggerNotification('', ''); 
-
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/parse/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          document_id: documentId,
-          strategy: strategy,
-          extract_tables: extractTables,
-          extract_images: extractImages
-        }),
-      });
-
-      const responseData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(responseData.detail || `Failed to parse document. Status: ${response.status}`);
-      }
-
-      triggerNotification(responseData.message || 'Document parsed successfully!');
-      return responseData;
-
-    } catch (err) {
-      console.error('Error parsing document in App.jsx:', err);
-      triggerNotification(err.message || 'An unexpected error occurred during parsing.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
-
-  const handleChunkDocument = useCallback(async (documentId, strategy, chunkSize, overlap) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      // Format the request body exactly as expected by the backend API
-      const response = await fetch(`${apiBase}/api/chunks/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          document_id: documentId,
-          strategy: strategy,
-          chunk_size: parseInt(chunkSize, 10) || 1000,
-          overlap: parseInt(overlap, 10) || 200
-        }),
-      });
-      
-      // Check for error status code before parsing response
-      if (!response.ok) {
-        const errorResponse = await response.json().catch(() => ({ 
-          detail: `Error ${response.status}: Failed to parse error response` 
-        }));
-        const errorDetail = errorResponse.detail || `Failed to chunk document. Status: ${response.status}`;
-        throw new Error(errorDetail);
-      }
-      
-      const data = await response.json();
-      console.log('Document successfully chunked:', data);
-      triggerNotification('Document chunked successfully!');
-      await fetchChunks(documentId); // Refresh the chunks
-      return data;
-    } catch (err) {
-      console.error('Error chunking document:', err);
-      setError(err.message || 'An unknown error occurred while chunking the document.');
-      triggerNotification(err.message || 'Failed to chunk document.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError, fetchChunks]);
-
-  const handleChunkDelete = useCallback(async (chunkId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      // Use the correct API endpoint path - /api/chunks/{chunk_id} (plural)
-      const response = await fetch(`${apiBase}/api/chunks/${chunkId}`, {
-        method: 'DELETE',
-      });
-      
-      // Check for error status code before parsing response
-      if (!response.ok) {
-        const errorResponse = await response.json().catch(() => ({ 
-          detail: `Error ${response.status}: Failed to parse error response` 
-        }));
-        const errorDetail = errorResponse.detail || `Failed to delete chunk. Status: ${response.status}`;
-        throw new Error(errorDetail);
-      }
-      
-      const data = await response.json();
-      console.log('Chunk successfully deleted:', data);
-      triggerNotification('Chunk deleted successfully!');
-      if (selectedDocumentId) {
-        await fetchChunks(selectedDocumentId); // Refresh the chunks list
-      }
-      return data;
-    } catch (err) {
-      console.error('Error deleting chunk:', err);
-      setError(err.message || 'An unknown error occurred while deleting the chunk.');
-      triggerNotification(err.message || 'Failed to delete chunk.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError, fetchChunks, selectedDocumentId]);
-
-  const handleCreateEmbeddings = useCallback(async (documentId, provider, model) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/embeddings/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          document_id: documentId,
-          provider: provider,
-          model: model
-        }),
-      });
-      
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || `Failed to create embeddings. Status: ${response.status}`);
-      }
-      triggerNotification('Embeddings created successfully!');
-      await fetchEmbeddings(documentId); // Refresh the embeddings
-      return data;
-    } catch (err) {
-      console.error('Error creating embeddings:', err);
-      setError(err.message || 'An unknown error occurred while creating embeddings.');
-      triggerNotification(err.message || 'Failed to create embeddings.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError, fetchEmbeddings]);
-
-  const handleEmbeddingDelete = useCallback(async (embeddingId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Ensure embedding ID is properly trimmed to avoid whitespace issues
-      const trimmedId = embeddingId.trim();
-      console.log(`Attempting to delete embedding with ID: ${trimmedId}`);
-      
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/embeddings/${trimmedId}`, {
-        method: 'DELETE',
-      });
-      
-      // First try to parse the response as JSON
-      let data;
-      let errorDetail = '';
-      try {
-        data = await response.json();
-      } catch (e) {
-        // If response is not valid JSON, get text content
-        errorDetail = await response.text();
-        console.error('Failed to parse delete embedding response as JSON:', errorDetail);
-      }
-      
-      if (!response.ok) {
-        const detail = data?.detail || errorDetail || `Failed to delete embedding. Status: ${response.status}`;
-        console.error(`Error response when deleting embedding ${trimmedId}:`, detail);
-        throw new Error(detail);
-      }
-      
-      console.log(`Successfully deleted embedding ${trimmedId}:`, data);
-      triggerNotification('Embedding deleted successfully!');
-      
-      // Refresh the embeddings list
-      await fetchEmbeddings(selectedDocumentId);
-      return data;
-    } catch (err) {
-      console.error('Error deleting embedding:', err);
-      setError(err.message || 'An unknown error occurred while deleting the embedding.');
-      triggerNotification(err.message || 'Failed to delete embedding.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError, fetchEmbeddings, selectedDocumentId]);
-
-  const handleCreateIndex = useCallback(async (documentId, vectorDb, embeddingId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      
-      // Generate index and collection names based on document ID and embedding ID
-      const collectionName = `col_${documentId.substring(0, 10)}`;
-      const indexName = `idx_${embeddingId.substring(0, 8)}`;
-      
-      console.log(`Creating index with params: documentId=${documentId}, vectorDb=${vectorDb}, embeddingId=${embeddingId}`);
-      
-      const response = await fetch(`${apiBase}/api/indices/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          document_id: documentId,
-          vector_db: vectorDb,
-          collection_name: collectionName,
-          index_name: indexName,
-          embedding_id: embeddingId
-        }),
-      });
-      
-      // Check for error response before parsing JSON
-      if (!response.ok) {
-        let errorDetail = '';
-        try {
-          const errorData = await response.json();
-          errorDetail = errorData.detail || JSON.stringify(errorData);
-        } catch (e) {
-          // Properly handle the exception when JSON parsing fails
-          try {
-            errorDetail = await response.text() || `Failed to parse error response: ${e.message}`;
-          } catch (textError) {
-            errorDetail = `Failed to read error response: ${textError.message}`;
-            console.error('Error reading response text:', textError);
-          }
-        }
-        throw new Error(errorDetail || `Failed to create index. Status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log('Index created successfully:', data);
-      triggerNotification('Index created successfully!');
-      await fetchIndices(); // Refresh the indices list
-      return data;
-    } catch (err) {
-      console.error('Error creating index:', err);
-      setError(err.message || 'An unknown error occurred while creating the index.');
-      triggerNotification(err.message || 'Failed to create index.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError, fetchIndices]);
-
-  const handleIndexDelete = useCallback(async (indexId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const response = await fetch(`${apiBase}/api/indices/${indexId}`, {
-        method: 'DELETE',
-      });
-      
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || `Failed to delete index. Status: ${response.status}`);
-      }
-      triggerNotification('Index deleted successfully!');
-      await fetchIndices(); // Refresh the indices list
-      return data;
-    } catch (err) {
-      console.error('Error deleting index:', err);
-      setError(err.message || 'An unknown error occurred while deleting the index.');
-      triggerNotification(err.message || 'Failed to delete index.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError, fetchIndices]);
-
-  const handleSearch = useCallback(async (indexId, query, topK = 5, similarityThreshold = 0.5, minChars = 100) => {
-    setLoading(true);
-    setError(null);
-    setSearchResults(null);
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      console.log(`Making search request with: indexId=${indexId}, query=${query}, topK=${topK}, similarityThreshold=${similarityThreshold}, minChars=${minChars}`);
-      
-      const response = await fetch(`${apiBase}/api/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          index_id: indexId,
-          query: query,
-          top_k: topK,
-          similarity_threshold: similarityThreshold,
-          min_chars: minChars
-        }),
-      });
-      
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || `Failed to perform search. Status: ${response.status}`);
-      }
-      
-      // DEBUG: Log search results to verify similarity pattern
-      console.log('Search result data:', data);
-      
-      // Make sure all similarity scores are consistently formatted as numbers
-      if (data && data.results && Array.isArray(data.results)) {
-        data.results = data.results.map(result => ({
-          ...result,
-          similarity: typeof result.similarity === 'string' ? parseFloat(result.similarity) : result.similarity
-        }));
-      }
-      
-      // Analyze similarity scores if results are available
-      if (data && data.results && Array.isArray(data.results) && data.results.length > 0) {
-        console.log('--- Similarity Score Analysis ---');
-        
-        // Check for hardcoded pattern (0.95, 0.90, 0.85...)
-        const hardcodedPattern = data.results.map((item, index) => ({
-          position: index + 1,
-          score: item.similarity,
-          expected: 0.95 - (index * 0.05),
-          difference: item.similarity - (0.95 - (index * 0.05))
-        }));
-        console.table(hardcodedPattern);
-        
-        // Check if scores follow the exact pattern of 0.95 - (i * 0.05)
-        const isHardcodedPattern = hardcodedPattern.every(item => Math.abs(item.difference) < 0.0001);
-        
-        // Check if some results are marked as low confidence
-        const hasLowConfidenceResults = data.results.some(item => 
-          item.metadata && item.metadata.low_confidence === true
-        );
-        
-        // Get real vector flag
-        const hasRealVectors = data.results.some(item => 
-          item.metadata && item.metadata.real_vectors === true
-        );
-        
-        console.log(`Similarity scores match hardcoded pattern (0.95, 0.90...): ${isHardcodedPattern ? 'YES (FAKE SCORES)' : 'NO (REAL SCORES)'}`);
-        console.log(`Results contain low confidence matches: ${hasLowConfidenceResults ? 'YES' : 'NO'}`);
-        console.log(`Results contain real vector similarity: ${hasRealVectors ? 'YES' : 'NO'}`);
-        
-        // Additional statistical analysis
-        const scores = data.results.map(item => item.similarity);
-        const min = Math.min(...scores);
-        const max = Math.max(...scores);
-        const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-        const isDescending = scores.every((score, i) => i === 0 || score <= scores[i-1]);
-        
-        // Calculate variance to check for randomness
-        const variance = scores.reduce((sum, score) => sum + Math.pow(score - avg, 2), 0) / scores.length;
-        
-        console.log('--- Score Statistics ---');
-        console.log(`Min: ${min.toFixed(4)}, Max: ${max.toFixed(4)}, Avg: ${avg.toFixed(4)}`);
-        console.log(`Perfectly descending order: ${isDescending ? 'YES' : 'NO'}`);
-        console.log(`Score variance: ${variance.toFixed(6)} (Higher variance suggests more randomness, real scores typically have higher variance)`);
-        
-        // Add to search results data for display
-        if (data.search_info) {
-          console.log('--- Search Info ---');
-          console.log('Vector dimensions:', data.search_info.vector_dimensions);
-          console.log('Timing:', data.search_info.timing);
-          console.log('Status:', data.search_info.status);
-        }
-        
-        // Look for signs of real vector search
-        const realSearchIndicators = [
-          !isHardcodedPattern,           // Not following the exact hardcoded pattern
-          variance > 0.001,              // Some variance in scores
-          !isDescending,                 // Not in perfect descending order
-          hasRealVectors,                // Results explicitly marked as real
-          data.search_info?.vector_dimensions !== undefined // Has detailed search info
-        ];
-        
-        // Weight the indicators, with explicit real_vectors flag having more weight
-        const weights = [0.2, 0.15, 0.15, 0.4, 0.1]; // weights sum to 1.0
-        let weightedConfidence = 0;
-        
-        realSearchIndicators.forEach((indicator, idx) => {
-          if (indicator) {
-            weightedConfidence += weights[idx];
-          }
-        });
-        
-        // If there are no results, we can't really determine if they're real or fake
-        const realSearchConfidence = data.results.length === 0 ? 0 : weightedConfidence;
-        console.log(`Real vector search confidence: ${(realSearchConfidence * 100).toFixed(1)}%`);
-        
-        // Mark low confidence results
-        if (data.results.some(r => r.metadata?.low_confidence)) {
-          console.log("⚠️ Results include low confidence matches below the original threshold");
-        }
-      } else {
-        console.log('No search results to analyze');
-      }
-      
-      // Process the document filename from search results here to ensure consistency
-      const processDocumentName = () => {
-        // Try immediate document_filename if available
-        if (data.document_filename) {
-          return data.document_filename;
-        }
-        
-        // Try to extract from document_id
-        if (data.document_id) {
-          const docId = data.document_id;
-          const timestampHashPattern = /(_\d{8}_\d{6}_[a-f0-9]+)$/;
-          let cleanId = docId.replace(timestampHashPattern, '');
-          
-          const timestampPattern = /_\d{8}$/;
-          if (timestampPattern.test(cleanId)) {
-            cleanId = cleanId.replace(timestampPattern, '');
-          }
-          return cleanId;
-        }
-        
-        // Try search info
-        if (data.search_info?.document_filename) {
-          return data.search_info.document_filename;
-        }
-        
-        // Try to get document name from index
-        if (data.index_id) {
-          const currentIndex = indices.find(idx => idx.index_id === data.index_id || idx.id === data.index_id);
-          if (currentIndex) {
-            if (currentIndex.name) return currentIndex.name;
-            if (currentIndex.documents && currentIndex.documents.length > 0) {
-              return currentIndex.documents[0].filename || null;
-            }
-          }
-          return indexId ? `Document from index ${indexId}` : null;
-        }
-        
-        return null;
-      };
-      
-      // Add document filename to search results if possible
-      const documentName = processDocumentName();
-      if (documentName) {
-        data.document_filename = documentName;
-      }
-      
-      // Update both search results and currentSearchResult state
-      setSearchResults(data);
-      setCurrentSearchResult(data); // Store current search result with document info
-      return data;
-    } catch (err) {
-      console.error('Error during search:', err);
-      setError(err.message || 'An unknown error occurred during search.');
-      triggerNotification(err.message || 'Search failed.', 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setError, setSearchResults]);
-
-  const handleGenerateText = useCallback(async (searchId, userPrompt, provider, model, image = null) => {
-    setLoading(true);
-    setError(null);
-    setGeneratedText(null); 
-
-    // Use default values if not provided
-    const actualProvider = provider || (config?.llm?.default_provider || 'openai');
-    const actualModel = model || (config?.llm?.default_model || 'gpt-3.5-turbo');
-
-    // Create request body with all required fields
-    const requestBody = {
-      prompt: userPrompt,
-      provider: actualProvider,
-      model: actualModel,
-      temperature: 0.7,  // Add default temperature
-      max_tokens: 1000,  // Add reasonable max tokens
-      top_p: 1,          // Add default top_p
-      stream: false,     // Disable streaming for now
-    };
-
-    // Only add search_id if it's not null/undefined
-    if (searchId) {
-      requestBody.search_id = searchId;
-    }
-
-    if (image) {
-      const reader = new FileReader();
-      reader.readAsDataURL(image);
-      await new Promise((resolve, reject) => {
-        reader.onload = () => {
-          requestBody.image_data = reader.result.split(',')[1]; 
-          resolve();
-        };
-        reader.onerror = error => reject(error);
-      });
-    }
+    // 创建语言+索引数据的缓存键，用于确定是否需要重新处理消息
+    const cacheKey = `${language}-${indices ? indices.length : 0}`;
     
-    const userMessageId = `user-msg-${Date.now()}`;
-    
-    // Only add user message if not in chatHistory already
-    // This prevents duplicate messages when called from handleSearchAndGenerate
-    const existingUserMessages = chatHistory.filter(msg => 
-      msg.sender === 'user' && msg.text === userPrompt && 
-      // Compare within the last minute to avoid filtering out old identical messages
-      (new Date().getTime() - new Date(msg.timestamp).getTime() < 60000)
-    );
-    
-    if (existingUserMessages.length === 0) {
-      setChatHistory(prev => [...prev, { 
-        id: userMessageId,
-        sender: 'user', 
-        text: userPrompt, 
-        timestamp: new Date().toLocaleString(),
-        image: image ? URL.createObjectURL(image) : null 
-      }]);
-    }
-
-    const thinkingMessageId = `system-thinking-${Date.now()}`;
-    setChatHistory(prev => [...prev, {
-      id: thinkingMessageId,
-      sender: 'system',
-      text: t('thinking'),
-      timestamp: new Date().toLocaleString(),
-      model: actualModel,
-      type: 'thinking'
-    }]);
-
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
-      const endpoint = searchId ? '/api/generate/from_search' : '/api/generate/text';
+    setChatHistory(prevChatHistory => prevChatHistory.map(msg => {
+      if (msg.sender !== 'ai' || !msg.text) {
+        return msg;
+      }
       
-      console.log(`Making ${endpoint} request with:`, JSON.stringify(requestBody));
-      const response = await fetch(`${apiBase}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
-      
-      if (!response.ok) {
-        const errorResponse = await response.json().catch(e => ({ 
-          detail: `Error ${response.status}: Failed to parse error response` 
-        }));
-        console.error(`API error (${response.status}):`, errorResponse);
-        throw new Error(errorResponse.detail || `Failed to generate text. Status: ${response.status}`);
+      // 如果消息已经用当前语言处理过，无需再次处理
+      if (msg.processedWithLanguage === cacheKey) {
+        return msg;
       }
 
-      const data = await response.json();
-      setGeneratedText(data);
-      triggerNotification('Text generated successfully.');
+      const mainContentSeparator = '\n\n---\n';
+      let mainContent = msg.text;
+      let existingFooter = '';
+      const hasExistingSeparator = msg.text.includes(mainContentSeparator);
 
-      // Include search information in the AI response if available
-      let additionalInfo = '';
-      if (searchId) {
-        // Get the search result details if available
-        const searchResultDetails = searchResults || currentSearchResult || data.search_results;
-        const indexId = searchResultDetails?.index_id;
-        
-        // Ensure we're using the same results that are stored in the global object for consistency
-        let resultsToUse = searchResultDetails?.results || [];
-        
-        // Check if we have a global object with potentially more accurate data
-        if (typeof window !== 'undefined' && window.verseMindCurrentSearchResults && 
-            window.verseMindCurrentSearchResults.search_id === searchId) {
-          resultsToUse = window.verseMindCurrentSearchResults.results || resultsToUse;
-          console.log("Using similarity scores from global search results object for consistency");
-        }
-        
-        // Get similarity scores if available - use the same format as in StorageInfoPanel
-        const topSimilarities = resultsToUse.slice(0, 3).map(r => r.similarity.toFixed(4)) || [];
-        const similarityInfo = topSimilarities.length > 0 
-          ? `\n${t('similarity')}: ${topSimilarities.join(', ')}` 
-          : '';
-        
-        // Get the appropriate labels based on the current language
+      if (hasExistingSeparator) {
+        const parts = msg.text.split(mainContentSeparator);
+        mainContent = parts[0]; // Content before the first separator
+        existingFooter = parts.slice(1).join(mainContentSeparator); // In case there are multiple separators, rejoin them
+      }
+      // If no separator, mainContent remains msg.text, existingFooter remains empty.
+
+      // 存储原始AI响应内容，以便在需要重新处理（如语言切换）时使用
+      // 如果尚未保存，则使用当前mainContent
+      const originalContent = msg.originalContent || mainContent;
+
+      // Logic for messages with structured documentContext (from search results)
+      if (msg.documentContext) {
         const usingContextLabel = t('usingDocumentContext');
         const docFilenameLabel = t('documentFilename');
         const searchIdLabel = t('searchIdLabel');
+        const similarityLabel = t('similarity');
+
+        const documentName = processDocumentName(msg.documentContext);
+        const searchId = msg.documentContext.searchId || 'Unknown';
+        let similarityInfo = '';
+
+        if (msg.documentContext.similarities && msg.documentContext.similarities.length > 0) {
+          const topSimilarity = msg.documentContext.similarities[0];
+          // Format similarity showing exactly 4 decimal places to match StorageInfoPanel display
+          // 使用固定的格式显示相似度，确保与StorageInfoPanel保持一致
+          const formattedSimilarity = (Math.round(parseFloat(topSimilarity) * 10000) / 10000).toFixed(4);
+          similarityInfo = ` ${similarityLabel}:: ${formattedSimilarity}`;
+        }
+
+        const newFooter = `**[${usingContextLabel}]** ${docFilenameLabel}: "${documentName}" (${searchIdLabel}: ${searchId})${similarityInfo}`;
         
-        // 使用更强大的文档名称提取逻辑
-        const getDocumentName = () => {
-          // 0. 首先尝试从全局对象获取文档名 (新增此步骤)
-          try {
-            if (typeof window !== 'undefined' && 
-                window.verseMindCurrentSearchResults && 
-                window.verseMindCurrentSearchResults.search_id === searchId &&
-                window.verseMindCurrentSearchResults.document_filename) {
-              return window.verseMindCurrentSearchResults.document_filename;
-            }
-          } catch (err) {
-            console.warn("Failed to access global search results object:", err);
-          }
-          
-          // 1. 尝试从currentSearchResult获取文档名
-          if (currentSearchResult?.search_id === searchId && currentSearchResult?.document_filename) {
-            return currentSearchResult.document_filename;
-          }
-          
-          // 2. 尝试从API响应获取文档名
-          if (data.search_results?.document_filename) {
-            return data.search_results.document_filename;
-          }
-          
-          // 3. 尝试从searchResultDetails获取文档名
-          if (searchResultDetails?.document_filename) {
-            return searchResultDetails.document_filename;
-          }
-          
-          // 4. 尝试从文档ID提取文件名
-          if (searchResultDetails?.document_id) {
-            const docId = searchResultDetails.document_id;
-            // 尝试移除时间戳和哈希部分
-            const timestampHashPattern = /(_\d{8}_\d{6}_[a-f0-9]+)$/;
-            let cleanId = docId.replace(timestampHashPattern, '');
-            
-            // 检查是否有其他时间戳模式需要清理
-            const timestampPattern = /_\d{8}$/;
-            if (timestampPattern.test(cleanId)) {
-              cleanId = cleanId.replace(timestampPattern, '');
-            }
-            
-            return cleanId;
-          }
-          
-          // 5. 尝试使用索引信息
-          if (indexId) {
-            const indexInfo = indices.find(idx => idx.index_id === indexId || idx.id === indexId);
-            if (indexInfo?.name) {
-              return `Index: ${indexInfo.name}`;
-            }
-            if (indexInfo?.documents && indexInfo.documents.length > 0) {
-              return indexInfo.documents[0].filename || `Document from index ${indexId}`;
-            }
-            return `Document from index ${indexId}`;
-          }
-          
-          // 6. 最后的备选方案 - 使用搜索ID
-          return `Search: ${searchId.substring(0, 8)}`;
+        // Always reconstruct the text with originalContent + separator + newFooter
+        // 修复: 使用保存的原始内容，而不是可能已经包含页脚的mainContent
+        return { 
+          ...msg, 
+          text: `${originalContent}${mainContentSeparator}${newFooter}`,
+          originalContent: originalContent, // 保存原始内容以便将来重新处理
+          processedWithLanguage: cacheKey // 标记为已处理，避免重复处理
         };
-        
-        // 获取文档名称
-        const documentName = getDocumentName();
-        console.log(`[handleGenerateText] Using document name: "${documentName}" for search ID: ${searchId}`);
-        
-        // 始终显示文档名称与搜索ID和相似度信息
-        additionalInfo = language === 'zh'
-          ? `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${documentName}" (${searchIdLabel}: ${searchId})${similarityInfo}`
-          : `\n\n---\n**[${usingContextLabel}]** ${docFilenameLabel} "${documentName}" (${searchIdLabel}: ${searchId})${similarityInfo}`;
-      } else {
-        // Clearly indicate when no document context was used
+      }
+      // Logic for messages that indicate "No Document Context"
+      else if (msg.text.includes('**[No Document Context]**') || msg.text.includes('**[无文档上下文]**')) {
+        // This part handles translation of the "No Document Context" footer.
         const noContextLabel = t('noDocumentContext');
-        additionalInfo = `\n\n---\n**[${noContextLabel}]** ${language === 'zh' ? 
-          '此回答生成未使用任何文档索引或搜索上下文。' : 
-          'This response was generated without using any document index or search context.'}`;
-      }
-
-      setChatHistory(prev => prev.filter(msg => msg.id !== thinkingMessageId));
-      setChatHistory(prev => [...prev, { 
-        id: data.generation_id || `ai-msg-${Date.now()}`,
-        sender: 'ai', 
-        text: data.generated_text + additionalInfo, 
-        timestamp: new Date().toLocaleString(),
-        model: actualModel, 
-        references: data.references || [],
-        search_id: searchId, // Store the search_id to indicate this was based on document search
-        using_index: !!searchId // Explicitly store whether an index was used
-      }]);
-      return data;
-    } catch (err) {
-      console.error("Error in handleGenerateText:", err);
-      setError(err.message);
-      triggerNotification(`Generation failed: ${err.message}`, 'error');
-      setChatHistory(prev => prev.filter(msg => msg.id !== thinkingMessageId));
-      setChatHistory(prev => [...prev, {
-        id: `gen-error-${Date.now()}`,
-        sender: 'system',
-        text: `Error during generation: ${err.message}`,
-        timestamp: new Date().toLocaleString(),
-        type: 'error'
-      }]);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [t, language, chatHistory, indices, documents, searchResults, currentSearchResult]);
-
-  const handleSearchAndGenerate = useCallback(async (indexId, query, model, provider = 'default', uploadedImage = null, searchParams = {}) => {
-    try {
-      // If indexId is provided, perform the search then generate 
-      if (indexId) {
-        // First, perform the search with custom search parameters
-        const { similarityThreshold = 0.5, topK = 3 } = searchParams;
-        console.log(`Searching with params: similarityThreshold=${similarityThreshold}, topK=${topK}`);
         
-        const searchResult = await handleSearch(indexId, query, topK, similarityThreshold, 100);
-        // Fix: Check for search_id (from backend) instead of id
-        const searchId = searchResult.search_id || null;
-        
-        // Extract document filename from search result with improved fallback logic
-        // This implements a more robust getDocumentName function similar to StorageInfoPanel
-        const getDocumentName = () => {
-          // First try to use the document_filename if available
-          if (searchResult?.document_filename) {
-            // Try to clean up the document name by removing timestamps and hashes
-            const filename = searchResult.document_filename;
-            
-            // Remove any timestamp pattern like _YYYYMMDD at the end
-            let cleanName = filename;
-            const timestampPattern = /_\d{8}$/;
-            if (timestampPattern.test(cleanName)) {
-              cleanName = cleanName.replace(timestampPattern, '');
-            }
-            
-            // Limit length for display
-            if (cleanName.length > 80) {
-              return cleanName.substring(0, 77) + '...';
-            }
-            
-            return cleanName;
-          } 
-          // Fall back to document_id if no filename is available
-          else if (searchResult?.document_id) {
-            const docId = searchResult.document_id;
-            // Try to remove timestamp and hash portions (e.g., _20250511_164327_e7081f26)
-            const timestampHashPattern = /(_\d{8}_\d{6}_[a-f0-9]+)$/;
-            let cleanId = docId.replace(timestampHashPattern, '');
-            
-            // Check if there's another timestamp pattern that needs to be cleaned
-            const timestampPattern = /_\d{8}$/;
-            if (timestampPattern.test(cleanId)) {
-              cleanId = cleanId.replace(timestampPattern, '');
-            }
-            
-            // Limit length for display
-            if (cleanId.length > 80) {
-              return cleanId.substring(0, 77) + '...';
-            }
-            
-            return cleanId;
-          }
-          // Try extracting from search info
-          else if (searchResult.search_info?.document_filename) {
-            const filename = searchResult.search_info.document_filename;
-            let cleanName = filename;
-            
-            // Clean any timestamp patterns
-            const timestampPattern = /_\d{8}$/;
-            if (timestampPattern.test(cleanName)) {
-              cleanName = cleanName.replace(timestampPattern, '');
-            }
-            
-            return cleanName;
-          }
-          // Try index name as a fallback
-          else if (searchResult?.index_id) {
-            return `Index: ${searchResult.index_id}`;
-          }
-          // If we still have no name, check the indices list
-          else {
-            const currentIndex = indices.find(idx => idx.index_id === indexId || idx.id === indexId);
-            if (currentIndex) {
-              if (currentIndex.name) {
-                return currentIndex.name;
-              } else if (currentIndex.documents && currentIndex.documents.length > 0) {
-                return currentIndex.documents[0].filename || `Document from index ${indexId}`;
-              }
-            }
-            // Final fallback
-            return `Document from index ${indexId}`;
-          }
+        // 直接使用原始内容加新的翻译后标签，而不是尝试替换旧标签
+        return { 
+          ...msg, 
+          text: `${originalContent}${mainContentSeparator}**[${noContextLabel}]**`,
+          originalContent: originalContent,
+          processedWithLanguage: cacheKey
         };
-        
-        const documentFilename = getDocumentName();
-        
-        // Log search result with document information for better debugging
-        const searchCompletedLabel = t('searchCompleted');
-        const docFilenameLabel = t('documentFilename');
-        const searchIdLabel = t('searchIdLabel');
-        
-        if (documentFilename) {
-          console.log(`${searchCompletedLabel} - ${docFilenameLabel} "${documentFilename}" (${searchIdLabel}: ${searchId})`);
-          // Store the document name for use in chat messages and update currentSearchResult
-          searchResult.document_filename = documentFilename;
-          
-          // Important - also update currentSearchResult with the document filename and search_id
-          const updatedSearchResult = {
-            ...searchResult,
-            document_filename: documentFilename,
-            search_id: searchId, // Ensure search_id is consistently stored
-            timestamp: new Date().toISOString(), // Add timestamp for sorting in StorageInfoPanel
-            // Ensure all similarity scores are properly formatted for consistent display
-            results: searchResult.results?.map(result => ({
-              ...result,
-              similarity: typeof result.similarity === 'string' ? parseFloat(result.similarity) : result.similarity
-            })) || []
-          };
-          
-          // Store in global object to allow StorageInfoPanel to access it
-          try {
-            // Only set if we're in a browser environment
-            if (typeof window !== 'undefined') {
-              window.verseMindCurrentSearchResults = updatedSearchResult;
-              console.log("Updated global search results object with document name and normalized similarity scores:", documentFilename);
-            }
-          } catch (err) {
-            console.warn("Failed to update global search results object:", err);
-          }
-          
-          // Update both state variables to ensure consistency
-          setCurrentSearchResult(updatedSearchResult);
-          setSearchResults(updatedSearchResult);
-        } else {
-          console.log(`${searchCompletedLabel} (${searchIdLabel}: ${searchId})`);
-        }
-        
-        if (!searchId) {
-          console.warn('Search completed but no search_id was returned. Falling back to direct generation.');
-          // Fall back to direct generation
-          return await handleGenerateText(null, query, provider, model);
-        }
-        
-        // Generate text based on search results, passing document filename as metadata in the searchResult
-        return await handleGenerateText(searchId, query, provider, model, uploadedImage);
-      } else {
-        // No index provided, directly generate text without search
-        console.log('No index selected, generating text directly without search context');
-        return await handleGenerateText(null, query, provider, model, uploadedImage);
       }
-    } catch (err) {
-      console.error('Error in search and generate workflow:', err);
-      setError(err.message || 'An unknown error occurred during the search and generate process.');
-      triggerNotification(err.message || 'Search and generate failed.', 'error');
       
-      // Even if search fails, try direct generation as fallback
-      try {
-        console.log('Search failed, falling back to direct generation without context');
-        return await handleGenerateText(null, query, provider, model);
-      } catch (genErr) {
-        console.error('Fallback generation also failed:', genErr);
-        throw genErr;
-      }
-    }
-  }, [handleSearch, handleGenerateText, setError, t]);
+      // If none of the above, mark as processed but don't change content
+      return {
+        ...msg,
+        processedWithLanguage: cacheKey
+      };
+    }));
+  }, [chatHistory, language, t, processDocumentName, indices]);
 
+  // Effect to update the welcome message when language changes
   useEffect(() => {
-    if (selectedDocument && selectedDocument.id) {
-      if (activeModule === 'chunk') {
-        fetchChunks(selectedDocument.id);
-      } else if (activeModule === 'parse') {
-        // Call fetchParsed but don't need to store the result in state anymore
-        fetchParsed(selectedDocument.id).then(result => {
-          if (result) {
-            console.log('Parsed document content fetched successfully');
-          }
-        }).catch(err => {
-          console.error('Failed to fetch parsed document:', err);
-        });
-      } else if (activeModule === 'embed') {
-        fetchEmbeddings(selectedDocument.id);
-      }
-    } else if (activeModule === 'embed') {
-      fetchEmbeddings();
+    if (chatHistory.length === 0) return;
+    
+    // Check if the first message is the welcome message
+    const firstMessage = chatHistory[0];
+    if (firstMessage.id === 'system-welcome') {
+      setChatHistory(prevHistory => {
+        const updatedHistory = [...prevHistory];
+        updatedHistory[0] = {
+          ...updatedHistory[0],
+          text: t('welcomeMessage')
+        };
+        return updatedHistory;
+      });
     }
-  }, [selectedDocument, activeModule, fetchChunks, fetchParsed, fetchEmbeddings]);
-
-  useEffect(() => {
-    fetchDocuments();
-    fetchIndices();
-  }, [fetchDocuments, fetchIndices]);
-
-  const handleModuleChange = (moduleName) => {
-    setActiveModule(moduleName);
-  };
-
+  }, [language, t]);
+  
   return (
     <div className="flex flex-col h-screen">
       <Header />
@@ -1358,15 +1640,16 @@ function App() {
         <MainContent 
           activeModule={activeModule}
           documents={documents}
-          chunks={chunks} // Pass chunks
-          chunksLoading={chunksLoading} // Pass chunksLoading
+          chunks={chunks}
+          chunksLoading={chunksLoading}
+          chunksError={chunksError}
           embeddings={embeddings}
           indices={indices}
           searchResults={searchResults}
           generatedText={generatedText}
           loading={loading}
           error={error}
-          onDocumentUpload={handleDocumentUpload} 
+          onDocumentUpload={handleDocumentUpload}
           onChunkDocument={handleChunkDocument}
           onChunkDelete={handleChunkDelete}
           onParseDocument={handleParseDocument}
@@ -1375,17 +1658,18 @@ function App() {
           onLoadEmbeddings={fetchEmbeddings}
           onCreateIndex={handleCreateIndex}
           onRefreshIndices={fetchIndices}
+          onRefreshDocuments={fetchDocuments}
           onIndexDelete={handleIndexDelete}
-          onDocumentDelete={handleDocumentDelete} 
-          onSearch={handleSearch} 
-          onGenerateText={handleGenerateText} 
-          onSendMessage={handleSearchAndGenerate} 
+          onDocumentDelete={handleDocumentDelete}
+          onSearch={handleSearch}
+          onGenerateText={handleGenerateText}
+          onSendMessage={handleSearchAndGenerate}
           selectedDocumentObject={selectedDocument}
           onDocumentSelect={handleSelectDocument}
-          selectedDocumentId={selectedDocumentId} // Pass selectedDocumentId
+          selectedDocumentId={selectedDocumentId}
           chatHistory={chatHistory}
-          currentTask={currentTask} 
-          taskProgress={taskProgress} 
+          currentTask={currentTask}
+          taskProgress={taskProgress}
           config={config}
           configLoading={configLoading}
         />

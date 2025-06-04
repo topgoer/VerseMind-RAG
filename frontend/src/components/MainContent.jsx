@@ -15,6 +15,8 @@ function MainContent({
   documents,
   embeddings,
   chunks, 
+  chunksLoading,
+  chunksError,
   indices,
   searchResults,
   generatedText,
@@ -62,9 +64,10 @@ function MainContent({
       case 'parse':
         return (
           <ParseFileModule 
-            documents={documents} 
-            loading={loading} 
-            error={error} 
+            documents={documents}
+            chunks={chunks}
+            loading={loading || chunksLoading} 
+            error={error || chunksError} 
             onParseDocument={onParseDocument}
           />
         );
@@ -73,8 +76,8 @@ function MainContent({
           <ChunkFileModule 
             documents={documents}
             chunks={chunks}
-            loading={loading}
-            error={error}
+            loading={loading || chunksLoading}
+            error={error || chunksError}
             onChunkDocument={onChunkDocument}
             onChunkDelete={onChunkDelete}
             selectedDocumentObject={selectedDocumentObject}
@@ -84,13 +87,15 @@ function MainContent({
       case 'embedding':
         return (
           <EmbeddingFileModule 
-            documents={documents} 
+            documents={documents}
+            chunks={chunks}
             embeddings={embeddings} // Pass embeddings
-            loading={loading} 
-            error={error} 
+            loading={loading || chunksLoading} 
+            error={error || chunksError}  
             onCreateEmbeddings={onCreateEmbeddings}
             onLoadEmbeddings={onLoadEmbeddings} // Pass onLoadEmbeddings
             onEmbeddingDelete={onEmbeddingDelete} // Pass delete handler
+            globalSelectedDocument={selectedDocumentObject}
           />
         );
       case 'indexing':

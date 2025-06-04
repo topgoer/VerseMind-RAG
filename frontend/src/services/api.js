@@ -7,13 +7,12 @@
  * @returns {Promise<Array>} - Array of embeddings
  */
 export async function fetchEmbeddingsDirectly(documentId = null) {
-  try {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
+  try {    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
     const url = documentId 
       ? `${apiBase}/api/embeddings/list?document_id=${encodeURIComponent(documentId)}`
       : `${apiBase}/api/embeddings/list`;
     
-    console.log(`[API Service] Fetching embeddings directly from: ${url}`);
+    // console.log(`[API Service] Fetching embeddings directly from: ${url}`);
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -27,9 +26,8 @@ export async function fetchEmbeddingsDirectly(documentId = null) {
       console.error('[API Service] Failed to fetch embeddings:', response.status, errorText);
       throw new Error(`Failed to fetch embeddings${documentId ? ` for document ${documentId}` : ''}. Status: ${response.status}`);
     }
-    
-    const data = await response.json();
-    console.log(`[API Service] Successfully fetched ${data.length} embeddings directly`);
+      const data = await response.json();
+    // console.log(`[API Service] Successfully fetched ${data.length} embeddings directly`);
     return Array.isArray(data) ? data : [];
   } catch (err) {
     console.error('[API Service] Error fetching embeddings directly:', err);
@@ -42,11 +40,10 @@ export async function fetchEmbeddingsDirectly(documentId = null) {
  * @returns {Promise<Array>} - Array of vector indices
  */
 export async function fetchIndicesDirectly() {
-  try {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
+  try {    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8200';
     const url = `${apiBase}/api/indices/list`;
     
-    console.log(`[API Service] Fetching indices directly from: ${url}`);
+    // console.log(`[API Service] Fetching indices directly from: ${url}`);
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -60,9 +57,8 @@ export async function fetchIndicesDirectly() {
       console.error('[API Service] Failed to fetch indices:', response.status, errorText);
       throw new Error(`Failed to fetch indices. Status: ${response.status}`);
     }
-    
-    const data = await response.json();
-    console.log(`[API Service] Successfully fetched ${data.length} indices directly`);
+      const data = await response.json();
+    // console.log(`[API Service] Successfully fetched ${data.length} indices directly`);
     return Array.isArray(data) ? data : [];
   } catch (err) {
     console.error('[API Service] Error fetching indices directly:', err);

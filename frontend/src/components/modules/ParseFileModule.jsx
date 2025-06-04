@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 function ParseFileModule({
   documents,
+  chunks = [],
   onParseDocument,
   loading,
   error,
@@ -15,6 +16,29 @@ function ParseFileModule({
   const [extractTables, setExtractTables] = useState(true);
   const [extractImages, setExtractImages] = useState(true);
   const [parseResult, setParseResult] = useState(null);
+  const [chunkedDocuments, setChunkedDocuments] = useState([]);
+
+  // Filter documents to show only those that have been chunked
+  useEffect(() => {
+    if (!Array.isArray(chunks) || !Array.isArray(documents)) {
+      setChunkedDocuments([]);
+      return;
+    }
+
+    // Extract unique document IDs from chunks
+    const chunkedDocumentIds = [...new Set(chunks.map(chunk => chunk.document_id))];
+    
+    // Filter the documents array to only include documents that have chunks
+    const filteredDocuments = documents.filter(doc => chunkedDocumentIds.includes(doc.id));
+    
+    // console.log(`[ParseFileModule] Filtered ${filteredDocuments.length} chunked documents out of ${documents.length} total documents`);
+    setChunkedDocuments(filteredDocuments);
+    
+    // If the currently selected document is not in the filtered list, reset selection
+    if (selectedDocument && !chunkedDocumentIds.includes(selectedDocument)) {
+      setSelectedDocument('');
+    }
+  }, [chunks, documents, selectedDocument]);
   
   // Handle form submission
   const handleSubmit = (e) => {
@@ -41,6 +65,11 @@ function ParseFileModule({
         <p className="text-gray-600 mb-4">
           {t('parsingDesc')}
         </p>
+        {chunkedDocuments.length === 0 && (
+          <div className="p-4 mb-4 text-sm text-amber-700 bg-amber-100 rounded-lg" role="alert">
+            <span className="font-medium">{t('info') || 'Info'}:</span> {t('noChunkedDocumentsAlert') || 'You need to chunk documents before parsing them. Please go to the chunking module first and process your documents.'}
+          </div>
+        )}
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -54,11 +83,17 @@ function ParseFileModule({
               required
             >
               <option value="">{t('selectDocument')}</option>
-              {documents.map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  {doc.filename}
+              {chunkedDocuments.length > 0 ? (
+                chunkedDocuments.map((doc) => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.filename}
+                  </option>
+                ))
+              ) : (
+                <option disabled value="">
+                  {t('noChunkedDocuments') || 'No chunked documents available. Please chunk documents first.'}
                 </option>
-              ))}
+              )}
             </select>
           </div>
           
@@ -208,6 +243,7 @@ function ParseFileModule({
 
 ParseFileModule.propTypes = {
   documents: PropTypes.array.isRequired,
+  chunks: PropTypes.array,
   onParseDocument: PropTypes.func.isRequired,
   loading: PropTypes.bool,
   error: PropTypes.string,

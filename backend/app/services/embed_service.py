@@ -199,14 +199,28 @@ class EmbedService:
         self.logger.debug(f"Creating embeddings for document_id: {document_id} with provider: {provider}, model: {model}")
         
         # 创建嵌入配置与函数
+        embed_fn = self._create_embedding_function(provider, model)
+        
+        # 加载并提取文本内容
+        text_chunks = self._load_and_extract_text_chunks(document_id)
+        
+        # 生成嵌入向量
+        results, dimensions = self._generate_embeddings(text_chunks, embed_fn, provider)
+        
+        # 保存结果并返回
+        return self._save_embedding_results(document_id, provider, model, results, dimensions)
+    
+    def _create_embedding_function(self, provider: str, model: str):
+        """创建嵌入函数"""
         config = EmbeddingConfig(provider, model)
         try:
-            embed_fn = self.factory.create_embedding_function(config)
+            return self.factory.create_embedding_function(config)
         except Exception as e:
             self.logger.error(f"Error creating embedding function: {str(e)}")
             raise ValueError(f"创建嵌入函数失败: {str(e)}")
-        
-        # 加载解析数据
+    
+    def _load_and_extract_text_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+        """加载解析数据并提取文本块"""
         parsed_file = self._find_parsed_file(document_id)
         if not parsed_file:
             self.logger.error(f"Parsed file not found for document ID: {document_id}. Please parse the document first.")
@@ -216,63 +230,7 @@ class EmbedService:
         with open(parsed_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        # 提取文本内容
-        text_chunks = []
-        
-        # 确定解析的数据结构
-        content = data.get('content', {})
-        
-        # 基于解析策略不同，提取文本块
-        if isinstance(content, dict) and 'sections' in content:
-            # 按章节解析的格式
-            for section in content['sections']:
-                # 添加章节标题
-                if 'title' in section and section['title']:
-                    text_chunks.append({
-                        'content': section['title'],
-                        'metadata': {'type': 'heading', 'level': section.get('level', 1)}
-                    })
-                
-                # 添加段落
-                for para in section.get('paragraphs', []):
-                    if 'text' in para and para['text']:
-                        text_chunks.append({
-                            'content': para['text'],
-                            'metadata': {'type': 'paragraph', 'section': section.get('title', '')}
-                        })
-                
-                # 处理子章节
-                for subsection in section.get('subsections', []):
-                    # 添加子章节标题
-                    if 'title' in subsection and subsection['title']:
-                        text_chunks.append({
-                            'content': subsection['title'],
-                            'metadata': {'type': 'heading', 'level': subsection.get('level', 2)}
-                        })
-                    
-                    # 添加子章节段落
-                    for para in subsection.get('paragraphs', []):
-                        if 'text' in para and para['text']:
-                            text_chunks.append({
-                                'content': para['text'],
-                                'metadata': {'type': 'paragraph', 'section': subsection.get('title', '')}
-                            })
-        elif isinstance(content, list):
-            # 按文本与表格混合解析
-            for item in content:
-                item_type = item.get('type')
-                if item_type == 'text' and 'content' in item:
-                    text_chunks.append({
-                        'content': item['content'],
-                        'metadata': {'type': 'paragraph', 'page': item.get('page')}
-                    })
-                elif item_type == 'table' and 'content' in item:
-                    # 表格内容转成文本
-                    table_text = str(item['content'])
-                    text_chunks.append({
-                        'content': table_text,
-                        'metadata': {'type': 'table', 'page': item.get('page')}
-                    })
+        text_chunks = self._extract_text_chunks_from_content(data.get('content', {}))
         
         self.logger.debug(f"Extracted {len(text_chunks)} text chunks for embedding")
         
@@ -280,68 +238,173 @@ class EmbedService:
             self.logger.error("No text chunks found for embedding")
             raise ValueError("没有提取到可嵌入的文本块")
             
-        # 批量或逐条调用嵌入API
-        dimensions = 0
+        return text_chunks
+    
+    def _extract_text_chunks_from_content(self, content) -> List[Dict[str, Any]]:
+        """从内容中提取文本块"""
+        text_chunks = []
+        
+        if isinstance(content, dict) and 'sections' in content:
+            text_chunks = self._extract_from_sections(content['sections'])
+        elif isinstance(content, list):
+            text_chunks = self._extract_from_list_content(content)
+            
+        return text_chunks
+    
+    def _extract_from_sections(self, sections) -> List[Dict[str, Any]]:
+        """从章节格式中提取文本块"""
+        text_chunks = []
+        
+        for section in sections:
+            # 添加章节标题
+            text_chunks.extend(self._extract_section_title(section))
+            
+            # 添加段落
+            text_chunks.extend(self._extract_section_paragraphs(section))
+            
+            # 处理子章节
+            text_chunks.extend(self._extract_subsections(section))
+            
+        return text_chunks
+    
+    def _extract_section_title(self, section) -> List[Dict[str, Any]]:
+        """提取章节标题"""
+        chunks = []
+        if 'title' in section and section['title']:
+            chunks.append({
+                'content': section['title'],
+                'metadata': {'type': 'heading', 'level': section.get('level', 1)}
+            })
+        return chunks
+    
+    def _extract_section_paragraphs(self, section) -> List[Dict[str, Any]]:
+        """提取章节段落"""
+        chunks = []
+        for para in section.get('paragraphs', []):
+            if 'text' in para and para['text']:
+                chunks.append({
+                    'content': para['text'],
+                    'metadata': {'type': 'paragraph', 'section': section.get('title', '')}
+                })
+        return chunks
+    
+    def _extract_subsections(self, section) -> List[Dict[str, Any]]:
+        """提取子章节内容"""
+        chunks = []
+        for subsection in section.get('subsections', []):
+            # 添加子章节标题
+            if 'title' in subsection and subsection['title']:
+                chunks.append({
+                    'content': subsection['title'],
+                    'metadata': {'type': 'heading', 'level': subsection.get('level', 2)}
+                })
+            
+            # 添加子章节段落
+            for para in subsection.get('paragraphs', []):
+                if 'text' in para and para['text']:
+                    chunks.append({
+                        'content': para['text'],
+                        'metadata': {'type': 'paragraph', 'section': subsection.get('title', '')}
+                    })
+        return chunks
+    
+    def _extract_from_list_content(self, content) -> List[Dict[str, Any]]:
+        """从列表格式内容中提取文本块"""
+        text_chunks = []
+        for item in content:
+            item_type = item.get('type')
+            if item_type == 'text' and 'content' in item:
+                text_chunks.append({
+                    'content': item['content'],
+                    'metadata': {'type': 'paragraph', 'page': item.get('page')}
+                })
+            elif item_type == 'table' and 'content' in item:
+                # 表格内容转成文本
+                table_text = str(item['content'])
+                text_chunks.append({
+                    'content': table_text,
+                    'metadata': {'type': 'table', 'page': item.get('page')}
+                })
+        return text_chunks
+    
+    def _generate_embeddings(self, text_chunks: List[Dict[str, Any]], embed_fn, provider: str) -> tuple:
+        """生成嵌入向量"""
+        dimensions = self._get_model_dimensions(provider)
         results = []
         
         try:
-            # 获取模型维度信息
-            model_info = next((model_info for provider_info in self.get_embedding_models().values() 
-                             for model_info in provider_info if model_info['id'] == model), None)
-            
-            if model_info:
-                dimensions = model_info['dimensions']
-        except Exception as e:
-            self.logger.warning(f"Error getting model dimensions: {str(e)}")
-            dimensions = 0
-            
-        # 使用提供商特定的批处理逻辑
-        try:
             if provider == EmbeddingProvider.OPENAI.value:
-                # OpenAI支持大批量处理
-                BATCH_SIZE = 20
-                for i in range(0, len(text_chunks), BATCH_SIZE):
-                    batch = text_chunks[i:i+BATCH_SIZE]
-                    texts = [c['content'] for c in batch]
-                    self.logger.debug(f"Processing batch {i//BATCH_SIZE + 1} with {len(texts)} chunks")
-                    
-                    vecs = embed_fn.embed_documents(texts)
-                    
-                    if vecs and len(vecs) > 0 and dimensions == 0:
-                        dimensions = len(vecs[0])
-                        
-                    for c, v in zip(batch, vecs):
-                        results.append({
-                            'vector': v, 
-                            'metadata': c['metadata'],
-                            'text': c['content'][:100] + ('...' if len(c['content']) > 100 else '')
-                        })
+                results, dimensions = self._generate_openai_embeddings(text_chunks, embed_fn, dimensions)
             else:
-                # 其他提供商按单条处理
-                for c in text_chunks:
-                    v = embed_fn.embed_query(c['content'])
-                    
-                    if v and len(v) > 0 and dimensions == 0:
-                        dimensions = len(v)
-                    
-                    results.append({
-                        'vector': v, 
-                        'metadata': c['metadata'],
-                        'text': c['content'][:100] + ('...' if len(c['content']) > 100 else '')
-                    })
+                results, dimensions = self._generate_single_embeddings(text_chunks, embed_fn, dimensions)
         except Exception as e:
             self.logger.error(f"Error during embedding generation: {str(e)}")
             raise ValueError(f"生成嵌入向量失败: {str(e)}")
-
+            
+        return results, dimensions
+    
+    def _get_model_dimensions(self, provider: str) -> int:
+        """获取模型维度信息"""
+        try:
+            model_info = next((model_info for provider_info in self.get_embedding_models().values() 
+                             for model_info in provider_info if model_info['id'] == provider), None)
+            
+            if model_info:
+                return model_info['dimensions']
+        except Exception as e:
+            self.logger.warning(f"Error getting model dimensions: {str(e)}")
+        return 0
+    
+    def _generate_openai_embeddings(self, text_chunks: List[Dict[str, Any]], embed_fn, dimensions: int) -> tuple:
+        """生成OpenAI嵌入向量（批量处理）"""
+        results = []
+        BATCH_SIZE = 20
+        
+        for i in range(0, len(text_chunks), BATCH_SIZE):
+            batch = text_chunks[i:i+BATCH_SIZE]
+            texts = [c['content'] for c in batch]
+            self.logger.debug(f"Processing batch {i//BATCH_SIZE + 1} with {len(texts)} chunks")
+            
+            vecs = embed_fn.embed_documents(texts)
+            
+            if vecs and len(vecs) > 0 and dimensions == 0:
+                dimensions = len(vecs[0])
+                
+            for c, v in zip(batch, vecs):
+                results.append(self._create_embedding_result(c, v))
+                
+        return results, dimensions
+    
+    def _generate_single_embeddings(self, text_chunks: List[Dict[str, Any]], embed_fn, dimensions: int) -> tuple:
+        """生成单条嵌入向量"""
+        results = []
+        
+        for c in text_chunks:
+            v = embed_fn.embed_query(c['content'])
+            
+            if v and len(v) > 0 and dimensions == 0:
+                dimensions = len(v)
+            
+            results.append(self._create_embedding_result(c, v))
+            
+        return results, dimensions
+    
+    def _create_embedding_result(self, chunk: Dict[str, Any], vector: List[float]) -> Dict[str, Any]:
+        """创建嵌入结果对象"""
+        return {
+            'vector': vector, 
+            'metadata': chunk['metadata'],
+            'text': chunk['content'][:100] + ('...' if len(chunk['content']) > 100 else '')
+        }
+    
+    def _save_embedding_results(self, document_id: str, provider: str, model: str, results: List[Dict[str, Any]], dimensions: int) -> Dict[str, Any]:
+        """保存嵌入结果并返回响应"""
         # 生成唯一ID和时间戳
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         embedding_id = str(uuid.uuid4())[:8]
         
         # 保存嵌入文件
-        # 替换模型名称中的无效字符（Windows不允许文件名中包含 : / \ * ? " < > |）
-        sanitized_model = model.replace(":", "-").replace("/", "-").replace("\\", "-").replace("*", "-").replace("?", "-").replace("\"", "-").replace("<", "-").replace(">", "-").replace("|", "-")
-        result_file = f"{document_id}_{provider}_{sanitized_model}_{timestamp}_embedded.json"
-        result_path = os.path.join(self.embeddings_dir, result_file)
+        result_file, result_path = self._generate_result_file_path(document_id, provider, model, timestamp)
         
         embedding_data = {
             'document_id': document_id,
@@ -370,44 +433,103 @@ class EmbedService:
             'result_file': result_file,
             'message': f"嵌入向量生成成功，已存储为 {result_file}"
         }
+    
+    def _generate_result_file_path(self, document_id: str, provider: str, model: str, timestamp: str) -> tuple:
+        """生成结果文件路径"""
+        # 替换模型名称中的无效字符（Windows不允许文件名中包含 : / \ * ? " < > |）
+        sanitized_model = model.replace(":", "-").replace("/", "-").replace("\\", "-").replace("*", "-").replace("?", "-").replace("\"", "-").replace("<", "-").replace(">", "-").replace("|", "-")
+        result_file = f"{document_id}_{provider}_{sanitized_model}_{timestamp}_embedded.json"
+        result_path = os.path.join(self.embeddings_dir, result_file)
+        return result_file, result_path
 
     def list_embeddings(self, document_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         列出所有嵌入向量文件
         """
         self.logger.debug(f"Listing embeddings for document_id: {document_id if document_id else 'all'}")
+        
+        try:
+            # Ensure directory exists
+            os.makedirs(self.embeddings_dir, exist_ok=True)
+            
+            # Validate directory and get file list
+            files = self._get_embedding_files()
+            
+            # Process embedding files
+            results = self._process_embedding_files(files, document_id)
+            
+            self.logger.debug(f"Found {len(results)} embedding files")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in list_embeddings: {str(e)}")
+            return []
+            
+    def _get_embedding_files(self) -> List[str]:
+        """Helper method to get list of embedding files"""
+        # Check if directory exists and is valid
+        if not os.path.exists(self.embeddings_dir) or not os.path.isdir(self.embeddings_dir):
+            self.logger.warning(f"Embeddings directory does not exist or is not a directory: {self.embeddings_dir}")
+            return []
+        
+        # Get file list
+        try:
+            return os.listdir(self.embeddings_dir)
+        except Exception as e:
+            self.logger.error(f"Error listing files in embeddings directory: {str(e)}")
+            return []
+    
+    def _process_embedding_files(self, files: List[str], document_id: Optional[str]) -> List[Dict[str, Any]]:
+        """Helper method to process embedding files and extract metadata"""
         results = []
         
-        # 确保目录存在
-        os.makedirs(self.embeddings_dir, exist_ok=True)
-        
-        # 遍历嵌入文件目录
-        for filename in os.listdir(self.embeddings_dir):
-            if filename.endswith('_embedded.json'):
-                if document_id and not filename.startswith(document_id):
-                    continue
+        for filename in files:
+            # Skip files that don't match our pattern
+            if not filename.endswith('_embedded.json'):
+                continue
                 
-                file_path = os.path.join(self.embeddings_dir, filename)
-                
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    # 提取基本信息
-                    results.append({
-                        'document_id': data.get('document_id', ''),
-                        'embedding_id': data.get('embedding_id', ''),
-                        'provider': data.get('provider', ''),
-                        'model': data.get('model', ''),
-                        'dimensions': data.get('dimensions', 0),
-                        'total_embeddings': data.get('total_embeddings', 0),
-                        'timestamp': data.get('timestamp', ''),
-                        'filename': filename
-                    })
-                except Exception as e:
-                    self.logger.error(f"Error reading embedding file {filename}: {str(e)}")
+            # Skip files that don't match document_id filter if provided
+            if document_id and not filename.startswith(document_id):
+                continue
             
+            # Process matching file
+            embedding_info = self._extract_embedding_info(filename)
+            if embedding_info:
+                results.append(embedding_info)
+                
         return results
+    
+    def _extract_embedding_info(self, filename: str) -> Optional[Dict[str, Any]]:
+        """Extract embedding information from a file"""
+        file_path = os.path.join(self.embeddings_dir, filename)
+        
+        # Verify file exists and is a file
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
+            self.logger.warning(f"Embedding file not found or not a file: {file_path}")
+            return None
+        
+        try:
+            # Read and parse the embedding data
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Extract basic information
+            return {
+                'document_id': data.get('document_id', ''),
+                'embedding_id': data.get('embedding_id', ''),
+                'provider': data.get('provider', ''),
+                'model': data.get('model', ''),
+                'dimensions': data.get('dimensions', 0),
+                'total_embeddings': data.get('total_embeddings', 0),
+                'timestamp': data.get('timestamp', ''),
+                'filename': filename
+            }
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON decode error in embedding file {filename}: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Error reading embedding file {filename}: {str(e)}")
+            
+        return None
 
     def delete_embedding(self, embedding_id: str) -> Dict[str, Any]:
         """
@@ -461,18 +583,11 @@ class EmbedService:
         self.logger.debug(f"Generating embedding vector for text with provider: {provider}, model: {model}")
         
         try:
-            # 修复 Ollama 模型名称格式问题：在文件名中连字符替换了冒号，但API调用需要原始格式
-            # 如果是 Ollama 提供商且模型名称中包含连字符但不包含冒号（可能是处理过的格式）
-            if provider.lower() == "ollama" and "-" in model and ":" not in model:
-                # 检查是否是文件名处理导致的格式问题
-                # 例如：'bge-m3-latest' 应该是 'bge-m3:latest'
-                if model.endswith("-latest") and "bge" in model.lower():
-                    restored_model = model.replace("-latest", ":latest")
-                    self.logger.debug(f"Restored Ollama model name format: '{model}' -> '{restored_model}'")
-                    model = restored_model
+            # 修复模型名称格式
+            corrected_model = self._correct_ollama_model_name(provider, model)
             
             # 创建嵌入配置与函数
-            config = EmbeddingConfig(provider, model)
+            config = EmbeddingConfig(provider, corrected_model)
             embed_fn = self.factory.create_embedding_function(config)
             
             # 生成向量
@@ -484,25 +599,47 @@ class EmbedService:
             self.logger.warning("Falling back to random vector for development/debugging")
             
             # 如果生成失败，返回随机向量（仅用于开发调试）
-            import numpy as np
-            dimensions = 384  # 默认维度
-            
-            # 根据模型确定维度
-            if provider == "openai":
-                if model == "text-embedding-3-small":
-                    dimensions = 1536
-                elif model == "text-embedding-3-large":
-                    dimensions = 3072
-            elif provider == "ollama" or provider == "baai":
-                if "bge" in model.lower():
-                    dimensions = 1024
+            return self._generate_fallback_vector(provider, model)
+    
+    def _correct_ollama_model_name(self, provider: str, model: str) -> str:
+        """修复 Ollama 模型名称格式问题"""
+        if provider.lower() == "ollama" and "-" in model and ":" not in model:
+            # 检查是否是文件名处理导致的格式问题
+            # 例如：'bge-m3-latest' 应该是 'bge-m3:latest'
+            if model.endswith("-latest") and "bge" in model.lower():
+                restored_model = model.replace("-latest", ":latest")
+                self.logger.debug(f"Restored Ollama model name format: '{model}' -> '{restored_model}'")
+                return restored_model
+        return model
+    
+    def _generate_fallback_vector(self, provider: str, model: str) -> List[float]:
+        """生成降级向量（用于开发调试）"""
+        import numpy as np
+        
+        dimensions = self._determine_fallback_dimensions(provider, model)
+        
+        # 使用现代numpy随机生成器
+        rng = np.random.default_rng(42)  # 固定种子以便调试
+        vector = rng.standard_normal(dimensions)
+        vector = vector / np.linalg.norm(vector)  # 归一化
+        
+        return vector.tolist()
+    
+    def _determine_fallback_dimensions(self, provider: str, model: str) -> int:
+        """确定降级向量的维度"""
+        dimensions = 384  # 默认维度
+        
+        # 根据模型确定维度
+        if provider == "openai":
+            if model == "text-embedding-3-small":
+                dimensions = 1536
+            elif model == "text-embedding-3-large":
+                dimensions = 3072
+        elif provider == "ollama" or provider == "baai":
+            if "bge" in model.lower():
+                dimensions = 1024
                 
-            np.random.seed(42)  # 固定种子以便调试
-            vector = np.random.randn(dimensions)
-            vector = vector / np.linalg.norm(vector)  # 归一化
-            np.random.seed(None)  # 重置随机种子
-            
-            return vector.tolist()
+        return dimensions
 
     # 新增：自定义紧凑 JSON 编码
     class CompactJSONEncoder(json.JSONEncoder):
@@ -541,8 +678,21 @@ class EmbedService:
         self.logger.debug(f"Searching for parsed file for document ID: {document_id} in {self.parsed_dir}")
         if os.path.exists(self.parsed_dir):
             for filename in os.listdir(self.parsed_dir):
-                if filename.startswith(document_id) and filename.endswith("_parsed.json"):
-                    self.logger.debug(f"Found parsed file: {filename}")
-                    return os.path.join(self.parsed_dir, filename)
+                if filename.endswith("_parsed.json") and document_id in filename:
+                    # Check if this is actually the correct document by examining the file structure
+                    # Files are named as: {document_name}_{document_id}_{timestamp}_parsed.json
+                    # or: {document_id}_{timestamp}_parsed.json (legacy format)
+                    parts = filename.replace("_parsed.json", "").split("_")
+                    
+                    # Check if document_id appears in the filename parts
+                    if document_id in parts:
+                        self.logger.debug(f"Found parsed file: {filename}")
+                        return os.path.join(self.parsed_dir, filename)
+                    
+                    # Also check if document_id appears anywhere in the filename (more flexible search)
+                    if document_id in filename:
+                        self.logger.debug(f"Found parsed file (flexible match): {filename}")
+                        return os.path.join(self.parsed_dir, filename)
+                        
         self.logger.warning(f"Parsed file for document ID: {document_id} not found in {self.parsed_dir}")
         return None

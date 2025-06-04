@@ -13,6 +13,10 @@ from app.core.logger import get_logger_with_env_level
 # Initialize logger using the environment-based configuration
 logger = get_logger_with_env_level(__name__)
 
+# Constants for string literals to avoid duplication
+CHUNKS_JSON_SUFFIX = "_chunks.json"
+DOCX_EXTENSION = ".docx"
+
 # Import ParseService for automatic document parsing after chunking
 from app.services.parse_service import ParseService
 
@@ -30,6 +34,158 @@ class ChunkService:
         # Initialize ParseService for automatic parsing after chunking
         self.parse_service = ParseService()
     
+    def _find_document_path(self, document_id: str) -> str:
+        """
+        查找文档路径
+        
+        Args:
+            document_id: 文档ID
+            
+        Returns:
+            文档路径
+            
+        Raises:
+            FileNotFoundError: 如果文档未找到
+        """
+        try:
+            document_path = self._find_document_for_tests(document_id) if self._is_test_environment() else self._find_document(document_id)
+            
+            if not document_path:
+                self.logger.error(f"Document not found for ID: '{document_id}'")
+                available_docs = self._list_available_documents()
+                self.logger.error(f"Available documents: {available_docs}")
+                raise FileNotFoundError(f"找不到ID为{document_id}的文档")
+            
+            self.logger.debug(f"Document found at path: '{document_path}'")
+            self.logger.debug(f"Document exists check: {os.path.exists(document_path)}")
+            self.logger.debug(f"Document size: {os.path.getsize(document_path) if os.path.exists(document_path) else 'N/A'}")
+            
+            return document_path
+        except Exception as e:
+            self.logger.error(f"Error during document lookup: {str(e)}")
+            import traceback
+            self.logger.error(f"Stack trace: {traceback.format_exc()}")
+            raise
+    
+    def _apply_chunking_strategy(self, strategy: str, text_content: str, chunk_size: int, overlap: int) -> List[Dict[str, Any]]:
+        """
+        根据策略对文本内容进行分块
+        
+        Args:
+            strategy: 分块策略
+            text_content: 文本内容
+            chunk_size: 块大小
+            overlap: 重叠大小
+            
+        Returns:
+            分块列表
+            
+        Raises:
+            ValueError: 如果策略不支持
+        """
+        if strategy == "char_count":
+            return self._chunk_by_char_count(text_content, chunk_size, overlap)
+        elif strategy == "paragraph":
+            return self._chunk_by_paragraph(text_content, chunk_size, overlap)
+        elif strategy == "heading":
+            return self._chunk_by_heading(text_content)
+        elif strategy == "langchain_recursive":
+            return self._chunk_by_langchain_recursive(text_content, chunk_size, overlap)
+        elif strategy == "by_sentences":
+            return self._chunk_by_sentences(text_content, chunk_size, overlap)
+        else:
+            raise ValueError(f"不支持的分块策略: {strategy}")
+    
+    def _extract_document_name(self, document_path: str) -> Optional[str]:
+        """
+        从文档路径中提取文档名称
+        
+        Args:
+            document_path: 文档路径
+            
+        Returns:
+            文档名称，如果提取失败则返回None
+        """
+        try:
+            if not document_path:
+                return None
+                
+            base_name = os.path.basename(document_path)
+            document_name = os.path.splitext(base_name)[0]
+            
+            # 如果文件名包含时间戳和ID，尝试提取原始名称
+            parts = document_name.split('_')
+            if len(parts) >= 3:
+                # 检查倒数第二个部分是否为时间戳格式
+                if len(parts[-2]) == 15 and parts[-2][8] == '_' and parts[-2][:8].isdigit() and parts[-2][9:].isdigit():
+                    # 倒数第三个部分以前为原始文件名
+                    document_name = '_'.join(parts[:-2])
+                    
+            return document_name
+        except Exception as e:
+            self.logger.warning(f"Error extracting document name: {str(e)}")
+            return None
+    
+    def _save_chunk_result(self, result: Dict[str, Any], document_name: Optional[str], 
+                          document_id: str, timestamp: str) -> str:
+        """
+        保存分块结果到文件
+        
+        Args:
+            result: 分块结果
+            document_name: 文档名称
+            document_id: 文档ID
+            timestamp: 时间戳
+            
+        Returns:
+            结果文件名
+        """
+        # 使用文档名称和ID生成文件名
+        if document_name:
+            result_file = f"{document_name}_{document_id}_{timestamp}{CHUNKS_JSON_SUFFIX}"
+        else:
+            result_file = f"{document_id}_{timestamp}{CHUNKS_JSON_SUFFIX}"
+            
+        result_path = os.path.join(self.chunks_dir, result_file)
+        
+        with open(result_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+            
+        return result_file
+    
+    def _auto_parse_document(self, document_id: str) -> Dict[str, Any]:
+        """
+        自动解析文档
+        
+        Args:
+            document_id: 文档ID
+            
+        Returns:
+            解析信息
+        """
+        try:
+            self.logger.info(f"Automatically parsing document: {document_id}")
+            parse_result = self.parse_service.parse_document(
+                document_id=document_id,
+                strategy="by_heading",  # Use by_heading as default strategy
+                extract_tables=False,
+                extract_images=False
+            )
+            self.logger.info(f"Document parsed successfully: {document_id}")
+            
+            # Add parsing information to the result
+            return {
+                "parsed": True,
+                "parse_strategy": "by_heading",
+                "parse_timestamp": parse_result.get("timestamp", "")
+            }
+        except Exception as e:
+            self.logger.warning(f"Auto-parsing failed: {str(e)}")
+            return {
+                "parsed": False,
+                "error": str(e)
+            }
+    
     def create_chunks(self, document_id: str, strategy: str, chunk_size: int = 1000, overlap: int = 200) -> Dict[str, Any]:
         """
         根据指定策略将文档分块
@@ -43,37 +199,20 @@ class ChunkService:
         返回:
             包含分块结果的字典
         """
-        print(f"[ChunkService.create_chunks] Received request to chunk document_id: '{document_id}', strategy: '{strategy}'")
-
-        # 检查文档是否存在
-        document_path = self._find_document_for_tests(document_id) if self._is_test_environment() else self._find_document(document_id)
+        self.logger.debug(f"Received request to chunk document_id: '{document_id}', strategy: '{strategy}'")
+        self.logger.debug(f"Checking paths - Working directory: {os.getcwd()}")
+        self.logger.debug(f"Documents directory: {self.documents_dir}")
+        self.logger.debug(f"Chunks directory: {self.chunks_dir}")
         
-        if not document_path:
-            print(f"[ChunkService.create_chunks] Error: Document not found for ID: '{document_id}'")
-            raise FileNotFoundError(f"找不到ID为{document_id}的文档")
-        
-        print(f"[ChunkService.create_chunks] Document found at path: '{document_path}'")
+        # 查找文档路径
+        document_path = self._find_document_path(document_id)
         
         # 读取文档内容
         file_ext = os.path.splitext(document_path)[1].lower()
         text_content = self._extract_text(document_path, file_ext)
         
         # 根据策略分块
-        chunks = []
-        
-        # 根据指定的策略选择分块方法
-        if strategy == "char_count":
-            chunks = self._chunk_by_char_count(text_content, chunk_size, overlap)
-        elif strategy == "paragraph":
-            chunks = self._chunk_by_paragraph(text_content, chunk_size, overlap)
-        elif strategy == "heading":
-            chunks = self._chunk_by_heading(text_content, chunk_size, overlap)
-        elif strategy == "langchain_recursive":  # support new strategy
-            chunks = self._chunk_by_langchain_recursive(text_content, chunk_size, overlap)
-        elif strategy == "by_sentences":  # support sentence-based splitting
-            chunks = self._chunk_by_sentences(text_content, chunk_size, overlap)
-        else:
-            raise ValueError(f"不支持的分块策略: {strategy}")
+        chunks = self._apply_chunking_strategy(strategy, text_content, chunk_size, overlap)
         
         # 生成唯一ID和时间戳
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -83,10 +222,14 @@ class ChunkService:
         for i, chunk in enumerate(chunks):
             chunk["chunk_id"] = f"{chunk_id}_{i}"
             chunk["document_id"] = document_id
-            
-        # 保存分块结果
+        
+        # 提取文档名称
+        document_name = self._extract_document_name(document_path)
+        
+        # 准备分块结果
         result = {
             "document_id": document_id,
+            "document_name": document_name,
             "chunk_id": chunk_id,
             "timestamp": timestamp,
             "strategy": strategy,
@@ -96,38 +239,16 @@ class ChunkService:
             "chunks": chunks
         }
         
-        result_file = f"{document_id}_{timestamp}_chunks.json"
-        result_path = os.path.join(self.chunks_dir, result_file)
+        # 保存分块结果
+        result_file = self._save_chunk_result(result, document_name, document_id, timestamp)
         
-        with open(result_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        # 自动解析文档
+        parse_info = self._auto_parse_document(document_id)
         
-        # Automatically parse the document after chunking to prevent 404 errors
-        # when frontend tries to access parsed content immediately after chunking
-        try:
-            print(f"[ChunkService.create_chunks] Automatically parsing document: {document_id}")
-            parse_result = self.parse_service.parse_document(
-                document_id=document_id,
-                strategy="by_heading",  # Use by_heading as default strategy
-                extract_tables=False,
-                extract_images=False
-            )
-            print(f"[ChunkService.create_chunks] Document parsed successfully: {document_id}")
-            # Add parsing information to the result
-            parse_info = {
-                "parsed": True,
-                "parse_strategy": "by_heading",
-                "parse_timestamp": parse_result.get("timestamp", "")
-            }
-        except Exception as e:
-            print(f"[ChunkService.create_chunks] Warning: Auto-parsing failed: {str(e)}")
-            parse_info = {
-                "parsed": False,
-                "error": str(e)
-            }
-        
+        # 返回结果
         return {
             "document_id": document_id,
+            "document_name": document_name if document_name else "",
             "chunk_id": chunk_id,
             "timestamp": timestamp,
             "strategy": strategy,
@@ -135,47 +256,165 @@ class ChunkService:
             "overlap": overlap,
             "total_chunks": len(chunks),
             "result_file": result_file,
-            "parse_info": parse_info  # Add parsing information to the response
+            "parse_info": parse_info
         }
+    
+    def _should_process_chunk_file(self, filename: str, document_id_filter: str) -> bool:
+        """判断是否应该处理该分块文件"""
+        # 文件必须是分块结果文件
+        if not filename.endswith(CHUNKS_JSON_SUFFIX):
+            return False
+            
+        # 如果没有提供文档ID过滤器，处理所有分块文件
+        if not document_id_filter:
+            return True
+            
+        # 检查文件名是否包含文档名或ID（对于有文档名的新格式文件）
+        if document_id_filter in filename:
+            return True
+            
+        # 尝试加载文件内容以检查实际的document_id，而不仅仅是依赖文件名
+        try:
+            file_path = os.path.join(self.chunks_dir, filename)
+            with open(file_path, "r", encoding="utf-8") as f:
+                chunk_data = json.load(f)
+                if chunk_data.get("document_id") == document_id_filter:
+                    return True
+        except Exception as e:
+            self.logger.error(f"Error checking chunk file {filename}: {e}")
+            
+        return False
+        
+    def _extract_chunk_metadata(self, chunk_data: Dict[str, Any], filename: str, file_path: str) -> Dict[str, Any]:
+        """从分块数据中提取元数据信息"""
+        # Extract document name directly from chunk_data first
+        document_name = chunk_data.get("document_name")
+        
+        # If not available, try to extract from filename
+        if not document_name and "_chunks.json" in filename:
+            # Try to extract document name from new format filenames
+            parts = filename.split('_')
+            if len(parts) > 1:
+                # For filenames like "红楼梦_20250604_072132_b86fa9b0_chunks.json"
+                # The document name is typically at the beginning of the filename
+                document_name = parts[0]
+        
+        # Create dictionary with all metadata
+        metadata = {
+            "id": chunk_data.get("chunk_id"),  # This is the ID of the chunking operation
+            "file": filename,
+            "path": file_path,
+            "timestamp": chunk_data.get("timestamp", ""),
+            "strategy": chunk_data.get("strategy", ""),
+            "chunk_size": chunk_data.get("chunk_size"), # Added chunk_size
+            "overlap": chunk_data.get("overlap"),    # Added overlap
+            "total_chunks": chunk_data.get("total_chunks", 0),
+            "document_id": chunk_data.get("document_id"), # Ensure this is included for filename lookup
+            "document_name": document_name  # Use the document name we extracted
+        }
+        
+        self.logger.debug(f"[_extract_chunk_metadata] Extracted metadata: id={metadata['id']}, document_id={metadata['document_id']}, document_name={metadata['document_name']}")
+        return metadata
+        
+    def _load_chunk_data(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """加载分块数据文件的内容"""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.error(f"Error reading or parsing chunk file {file_path}: {e}")
+            return None
+            
+    def _process_chunk_files(self, all_files: List[str], document_id_filter: str) -> List[Dict[str, Any]]:
+        """处理文件夹中的分块文件
+        
+        Args:
+            all_files: 所有文件列表
+            document_id_filter: 文档ID过滤器
+            
+        Returns:
+            符合条件的分块文件列表
+        """
+        chunk_files = []
+        
+        for filename in all_files:
+            should_process = self._should_process_chunk_file(filename, document_id_filter)
+            self.logger.debug(f"Checking file: {filename}, should process: {should_process}")
+            
+            if not should_process:
+                continue
+                
+            file_path = os.path.join(self.chunks_dir, filename)
+            chunk_data = self._load_chunk_data(file_path)
+            
+            if not chunk_data:
+                self.logger.warning(f"Failed to load chunk data from: {filename}")
+                continue
+            
+            # Skip the strict document_id check if the document name is in the filename
+            # This is needed for the new format that includes document names
+            if document_id_filter and document_id_filter not in filename and chunk_data.get("document_id") != document_id_filter:
+                self.logger.debug(f"Document ID mismatch. Filter: '{document_id_filter}', File has: '{chunk_data.get('document_id')}'")
+                continue
+
+            chunk_metadata = self._extract_chunk_metadata(chunk_data, filename, file_path)
+            chunk_files.append(chunk_metadata)
+            self.logger.debug(f"Added chunk: {chunk_metadata['id']} from file: {filename}")
+                
+        return chunk_files
+    
+    def _process_all_chunk_files(self, all_files: List[str]) -> List[Dict[str, Any]]:
+        """处理所有分块文件，不进行文档ID过滤
+        
+        Args:
+            all_files: 所有文件列表
+            
+        Returns:
+            所有分块文件列表
+        """
+        chunk_files = []
+        
+        for filename in all_files:
+            if not filename.endswith(CHUNKS_JSON_SUFFIX):
+                continue
+                
+            file_path = os.path.join(self.chunks_dir, filename)
+            chunk_data = self._load_chunk_data(file_path)
+            
+            if not chunk_data:
+                self.logger.warning(f"Failed to load chunk data from: {filename}")
+                continue
+
+            chunk_metadata = self._extract_chunk_metadata(chunk_data, filename, file_path)
+            chunk_files.append(chunk_metadata)
+            self.logger.debug(f"Added chunk: {chunk_metadata['id']} from file: {filename}")
+                
+        return chunk_files
     
     def get_document_chunks(self, document_id_filter: str) -> List[Dict[str, Any]]:
         """获取指定文档的所有分块结果文件信息"""
-        chunk_files = []
+        self.logger.debug(f"Looking for chunks with document_id_filter: '{document_id_filter}'")
         
-        if os.path.exists(self.chunks_dir):
-            for filename in os.listdir(self.chunks_dir):
-                # Filter by document_id if a specific one is requested for the list
-                # The filename of the chunk result itself contains the document_id
-                if document_id_filter and not filename.startswith(document_id_filter):
-                    continue
-                
-                if filename.endswith("_chunks.json"):
-                    file_path = os.path.join(self.chunks_dir, filename)
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            chunk_data = json.load(f)
-                        
-                        # Ensure the document_id from the content matches the filter if provided
-                        # This is a stricter check if document_id_filter is just a prefix
-                        if document_id_filter and chunk_data.get("document_id") != document_id_filter:
-                            continue
-
-                        chunk_files.append({
-                            "id": chunk_data.get("chunk_id"),  # This is the ID of the chunking operation
-                            "file": filename,
-                            "path": file_path,
-                            "timestamp": chunk_data.get("timestamp", ""),
-                            "strategy": chunk_data.get("strategy", ""),
-                            "chunk_size": chunk_data.get("chunk_size"), # Added chunk_size
-                            "overlap": chunk_data.get("overlap"),    # Added overlap
-                            "total_chunks": chunk_data.get("total_chunks", 0),
-                            "document_id": chunk_data.get("document_id") # Ensure this is included for filename lookup
-                        })
-                    except Exception as e:
-                        print(f"Error reading or parsing chunk file {filename}: {e}")
-                        # Optionally skip this file or handle error differently
-                        continue # Skip corrupted or unreadable chunk files
+        # Check if chunks directory exists
+        if not os.path.exists(self.chunks_dir):
+            self.logger.warning(f"Chunks directory does not exist: {self.chunks_dir}")
+            return []
         
+        # Get list of all files in the chunks directory
+        all_files = os.listdir(self.chunks_dir)
+        self.logger.debug(f"Found {len(all_files)} files in chunks directory")
+        
+        # Special cases: if document_id_filter is 'list', empty or None, return all chunk files
+        if not document_id_filter or document_id_filter.lower() == 'list':
+            self.logger.debug("Empty filter or 'list' command detected - retrieving all chunk files")
+            chunk_files = self._process_all_chunk_files(all_files)
+            self.logger.debug(f"Returning all {len(chunk_files)} chunks without filtering")
+            return chunk_files
+        
+        # Process the chunk files with filtering
+        chunk_files = self._process_chunk_files(all_files, document_id_filter)
+        
+        self.logger.debug(f"Returning {len(chunk_files)} chunks for document_id: {document_id_filter}")
         return chunk_files
     
     def delete_chunk_result(self, chunk_id: str) -> str:
@@ -185,7 +424,7 @@ class ChunkService:
 
         found_file = None
         for filename in os.listdir(self.chunks_dir):
-            if filename.endswith("_chunks.json"):
+            if filename.endswith(CHUNKS_JSON_SUFFIX):
                 file_path_to_check = os.path.join(self.chunks_dir, filename)
                 try:
                     with open(file_path_to_check, 'r', encoding='utf-8') as f_check:
@@ -203,200 +442,393 @@ class ChunkService:
                 os.remove(file_to_delete)
                 return f"Chunk result file '{found_file}' deleted successfully."
             except OSError as e:
-                raise Exception(f"Error deleting file '{found_file}': {e}")
+                raise OSError(f"Error deleting file '{found_file}': {e}")
         else:
             raise FileNotFoundError(f"Chunk result file containing chunk_id '{chunk_id}' not found.")
     
+    def _load_chunk_file(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """从给定路径加载分块JSON文件"""
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.error(f"Error reading chunk file {file_path}: {e}")
+            return None
+            
+    def _check_chunk_id_match(self, chunk_data: Dict[str, Any], chunk_id: str) -> Optional[Dict[str, Any]]:
+        """检查分块数据中是否包含指定ID的块"""
+        # 检查主块ID
+        if chunk_data.get("chunk_id") == chunk_id:
+            return chunk_data
+            
+        # 检查子块列表
+        for chunk in chunk_data.get("chunks", []):
+            if chunk.get("chunk_id") == chunk_id:
+                return chunk
+                
+        return None
+        
     def get_chunk_by_id(self, chunk_id: str) -> Optional[Dict[str, Any]]:
         """获取指定ID的分块结果"""
-        if os.path.exists(self.chunks_dir):
-            for filename in os.listdir(self.chunks_dir):
-                if filename.endswith("_chunks.json"):
-                    file_path = os.path.join(self.chunks_dir, filename)
-                    
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        chunk_data = json.load(f)
-                        
-                    # 检查是否包含指定ID的块
-                    if chunk_data.get("chunk_id") == chunk_id:
-                        return chunk_data
-                    
-                    # 检查子块
-                    for chunk in chunk_data.get("chunks", []):
-                        if chunk.get("chunk_id") == chunk_id:
-                            return chunk
+        if not os.path.exists(self.chunks_dir):
+            return None
+            
+        # 遍历所有JSON文件查找匹配的块ID
+        for filename in os.listdir(self.chunks_dir):
+            if not filename.endswith(CHUNKS_JSON_SUFFIX):
+                continue
+                
+            file_path = os.path.join(self.chunks_dir, filename)
+            chunk_data = self._load_chunk_file(file_path)
+            
+            if not chunk_data:
+                continue
+                
+            # 检查是否包含指定ID的块
+            result = self._check_chunk_id_match(chunk_data, chunk_id)
+            if result:
+                return result
         
         return None
     
-    def _find_document(self, document_id: str) -> Optional[str]:
-        """
-        Finds the path to the actual content file (e.g., PDF, TXT) that needs to be chunked.
-        1. Uses document_id to locate metadata JSON in self.documents_dir ('01-loaded_docs')
-        2. Reads metadata JSON and extracts path to original content file
-        3. Returns resolved path to content file
-
-        For testing: Special support to find test PDFs in temporary directories
-        """
-        print(f"[ChunkService._find_document] Attempting to find content file for document_id: '{document_id}'")
+    def _get_temp_directories(self) -> List[str]:
+        """获取可能包含临时文件的目录列表"""
+        temp_dirs = [tempfile.gettempdir()]
         
-        # 1. SPECIAL TEST FILE HANDLING - Look in temp directories
-        # When running tests, the document storage system uses temp files that may not be properly 
-        # registered in the metadata system
-        try:
-            # Check for test files in common temp directories
-            temp_dirs_to_check = [tempfile.gettempdir()]
+        if os.environ.get('TEMP'):
+            temp_dirs.append(os.environ.get('TEMP'))
+        if os.environ.get('TMP'):
+            temp_dirs.append(os.environ.get('TMP'))
             
-            # Also check OS-specific temp directories and current dir
-            if os.environ.get('TEMP'):
-                temp_dirs_to_check.append(os.environ.get('TEMP'))
-            if os.environ.get('TMP'):
-                temp_dirs_to_check.append(os.environ.get('TMP'))
+        return temp_dirs
+        
+    def _check_temp_file(self, temp_filepath: str) -> bool:
+        """检查临时文件是否存在且是最近创建的"""
+        if not os.path.exists(temp_filepath):
+            return False
+            
+        file_stat = os.stat(temp_filepath)
+        # 检查文件是否是最近创建的（30秒内）
+        file_age = datetime.datetime.now().timestamp() - file_stat.st_mtime
+        return file_age < 30
+        
+    def _search_in_temp_directories(self, document_id: str) -> Optional[str]:
+        """在临时目录中搜索指定ID的文件"""
+        try:
+            temp_dirs = self._get_temp_directories()
                 
-            # Attempt to find any recently created test PDF files
-            for temp_dir in temp_dirs_to_check:
+            for temp_dir in temp_dirs:
                 if not os.path.exists(temp_dir):
                     continue
                     
                 for temp_filename in os.listdir(temp_dir):
-                    # Look for PDF files with the document ID in them first (exact match)
-                    if temp_filename.endswith('.pdf') and document_id in temp_filename:  # Direct match with ID
-                        
+                    if temp_filename.endswith('.pdf') and document_id in temp_filename:
                         temp_filepath = os.path.join(temp_dir, temp_filename)
-                        file_stat = os.stat(temp_filepath)
-                        # Check if file was created recently (last 30 seconds)
-                        file_age = datetime.datetime.now().timestamp() - file_stat.st_mtime
-                        if file_age < 30 and os.path.exists(temp_filepath):
-                            print(f"[ChunkService._find_document] Found temporary test file: '{temp_filepath}'")
+                        
+                        if self._check_temp_file(temp_filepath):
+                            self.logger.info(f"Found temporary test file: '{temp_filepath}'")
                             return temp_filepath
         except Exception as e:
-            # Don't let temp directory failures stop the normal flow
-            print(f"[ChunkService._find_document] Error checking temp directory: {e}")
+            self.logger.error(f"Error checking temp directory: {e}")
+            
+        return None
         
-        # 2. NORMAL FLOW - If not a test file, continue with production logic
-        # self.documents_dir is '01-loaded_docs' (where metadata JSONs are)
-        abs_metadata_dir = os.path.abspath(self.documents_dir)
-        print(f"[ChunkService._find_document] Metadata directory (self.documents_dir): '{self.documents_dir}', Absolute path: '{abs_metadata_dir}'")
-
-        if not os.path.exists(abs_metadata_dir):
-            print(f"[ChunkService._find_document] Error: Metadata directory does not exist at '{abs_metadata_dir}'")
+    def _find_metadata_file(self, document_id: str, metadata_dir: str) -> Optional[str]:
+        """查找与文档ID关联的元数据JSON文件"""
+        if not os.path.exists(metadata_dir):
+            self.logger.error(f"Metadata directory does not exist at '{metadata_dir}'")
             return None
-
-        # Find the metadata JSON file associated with the document_id
-        found_metadata_json_path = None
-        print(f"[ChunkService._find_document] Searching for metadata JSON in '{abs_metadata_dir}' starting with document_id '{document_id}'...")
-        for filename in os.listdir(abs_metadata_dir):
+            
+        for filename in os.listdir(metadata_dir):
             if filename.startswith(document_id) and filename.endswith('.json'):
-                found_metadata_json_path = os.path.join(abs_metadata_dir, filename)
-                print(f"[ChunkService._find_document] Found metadata JSON file: '{found_metadata_json_path}'")
-                break
+                json_path = os.path.join(metadata_dir, filename)
+                self.logger.info(f"Found metadata JSON file: '{json_path}'")
+                return json_path
+                
+        self.logger.error(f"No metadata JSON file found in '{metadata_dir}' starting with '{document_id}'")
+        return None
         
-        if not found_metadata_json_path:
-            print(f"[ChunkService._find_document] Error: No metadata JSON file found in '{abs_metadata_dir}' starting with '{document_id}'")
-            
-            # As a fallback, check if the document_id directly refers to a file in storage/documents
-            workspace_root = os.path.abspath(os.path.join(abs_metadata_dir, "..", ".."))
-            for ext in ['.pdf', '.txt', '.md', '.docx']:
-                potential_path = os.path.join(workspace_root, "storage", "documents", document_id + ext)
-                if os.path.exists(potential_path):
-                    print(f"[ChunkService._find_document] Found document directly in storage: {potential_path}")
-                    return potential_path
-            
-            return None
-
-        # Load the metadata JSON
+    def _check_direct_document_path(self, document_id: str, workspace_root: str) -> Optional[str]:
+        """检查document_id是否直接引用storage/documents中的文件"""
+        for ext in ['.pdf', '.txt', '.md', DOCX_EXTENSION]:
+            potential_path = os.path.join(workspace_root, "storage", "documents", document_id + ext)
+            if os.path.exists(potential_path):
+                self.logger.info(f"Found document directly in storage: {potential_path}")
+                return potential_path
+                
+        return None
+        
+    def _load_metadata_json(self, json_path: str) -> Optional[dict]:
+        """加载元数据JSON文件"""
         try:
-            with open(found_metadata_json_path, 'r', encoding='utf-8') as f:
+            with open(json_path, 'r', encoding='utf-8') as f:
                 metadata = json.load(f)
-            print(f"[ChunkService._find_document] Successfully loaded metadata from '{found_metadata_json_path}'")
+            self.logger.debug(f"Successfully loaded metadata from '{json_path}'")
+            return metadata
         except Exception as e:
-            print(f"[ChunkService._find_document] Error loading or parsing metadata JSON '{found_metadata_json_path}': {e}")
+            self.logger.error(f"Error loading or parsing metadata JSON '{json_path}': {e}")
             return None
-
-        # Extract the content file path from the metadata
-        # Try common keys where the path to the original file in storage/documents might be stored.
+            
+    def _extract_path_from_metadata(self, metadata: dict, json_path: str) -> Optional[str]:
+        """从元数据中提取内容文件路径"""
         potential_path_keys = ['content_storage_path', 'original_file_path', 'file_path', 'source_path', 'document_path']
-        content_file_path_from_metadata = None
+        
         for key in potential_path_keys:
             if key in metadata and isinstance(metadata[key], str):
-                content_file_path_from_metadata = metadata[key]
-                print(f"[ChunkService._find_document] Found path in metadata key '{key}': '{content_file_path_from_metadata}'")
-                break
-        
-        if not content_file_path_from_metadata:
-            print(f"[ChunkService._find_document] Preferred path keys not found in metadata JSON '{found_metadata_json_path}'. Searched keys: {potential_path_keys}.")
-            print(f"[ChunkService._find_document] Attempting fallback: constructing path using document_id '{document_id}' and trying to determine extension.")
-            
-            workspace_root = os.path.abspath(os.path.join(abs_metadata_dir, "..", "..")) # Navigate from backend/01-loaded_docs to workspace root
-            
-            # Try to get original extension from metadata if LoadService stores it (e.g., as "file_extension": ".pdf")
-            original_extension = metadata.get("file_extension") or metadata.get("extension")
-            
-            if original_extension:
-                # Ensure original_extension starts with a dot
-                if not original_extension.startswith('.'):
-                    original_extension = '.' + original_extension
+                path = metadata[key]
+                self.logger.info(f"Found path in metadata key '{key}': '{path}'")
+                return path
                 
-                potential_path = os.path.join(workspace_root, "storage", "documents", document_id + original_extension)
-                if os.path.exists(potential_path):
-                    content_file_path_from_metadata = potential_path
-                    print(f"[ChunkService._find_document] Fallback using document_id and 'extension' ('{original_extension}') from metadata: '{content_file_path_from_metadata}'")
-                else:
-                    print(f"[ChunkService._find_document] Path constructed with extension from metadata ('{potential_path}') does not exist.")
-
-            # If extension not in metadata or path constructed with it didn't exist, try common extensions
-            if not content_file_path_from_metadata:
-                print(f"[ChunkService._find_document] Extension not found/used from metadata. Trying common extensions with document_id '{document_id}'.")
-                possible_extensions = ['.pdf', '.txt', '.md', '.docx'] 
-                for ext_to_try in possible_extensions:
-                    potential_path = os.path.join(workspace_root, "storage", "documents", document_id + ext_to_try)
-                    if os.path.exists(potential_path):
-                        content_file_path_from_metadata = potential_path
-                        print(f"[ChunkService._find_document] Fallback successful: Found content file by appending extension '{ext_to_try}': '{content_file_path_from_metadata}'")
-                        break
+        self.logger.warning(f"Preferred path keys not found in metadata JSON '{json_path}'")
+        return None
+        
+    def _try_build_path_with_extension(self, document_id: str, metadata: dict, workspace_root: str) -> Optional[str]:
+        """尝试使用文档ID和扩展名构建路径"""
+        # 尝试从元数据中获取原始扩展名
+        original_extension = metadata.get("file_extension") or metadata.get("extension")
+        
+        if original_extension:
+            if not original_extension.startswith('.'):
+                original_extension = '.' + original_extension
             
-            if not content_file_path_from_metadata:        
-                print(f"[ChunkService._find_document] Fallback failed: Could not determine content file path in 'storage/documents/' for document_id '{document_id}' after trying extensions.")
-                return None
-
-        # Resolve the path (it could be absolute, or relative to workspace)
-        resolved_content_path = ""
-        if os.path.isabs(content_file_path_from_metadata):
-            resolved_content_path = content_file_path_from_metadata
-            print(f"[ChunkService._find_document] Path from metadata is absolute: '{resolved_content_path}'")
+            potential_path = os.path.join(workspace_root, "storage", "documents", document_id + original_extension)
+            if os.path.exists(potential_path):
+                self.logger.info(f"Found path using extension from metadata: '{potential_path}'")
+                return potential_path
+                
+        # 尝试常见扩展名
+        self.logger.debug(f"Trying common extensions with document_id '{document_id}'")
+        possible_extensions = ['.pdf', '.txt', '.md', DOCX_EXTENSION] 
+        for ext in possible_extensions:
+            potential_path = os.path.join(workspace_root, "storage", "documents", document_id + ext)
+            if os.path.exists(potential_path):
+                self.logger.info(f"Found file with extension '{ext}': '{potential_path}'")
+                return potential_path
+                
+        return None
+        
+    def _resolve_content_path(self, path: str, workspace_root: str, json_path: str = None) -> Optional[str]:
+        """解析内容文件的绝对路径"""
+        # 1. First try the path as provided (absolute or relative to workspace)
+        resolved_path = self._resolve_initial_path(path, workspace_root)
+        
+        # 2. If path doesn't exist and we have a JSON path, try relative to JSON
+        if not os.path.exists(resolved_path) and json_path:
+            resolved_path = self._try_path_relative_to_json(path, json_path, resolved_path)
+        
+        # 3. Validate the resolved path
+        return self._validate_resolved_path(resolved_path)
+    
+    def _resolve_initial_path(self, path: str, workspace_root: str) -> str:
+        """Resolve initial path - either absolute or relative to workspace root"""
+        if os.path.isabs(path):
+            resolved_path = path
+            self.logger.debug(f"Path is absolute: '{resolved_path}'")
         else:
-            # Assume relative to workspace root if not absolute
-            workspace_root = os.path.abspath(os.path.join(abs_metadata_dir, "..", "..")) # From backend/01-loaded_docs to workspace root
-            resolved_content_path = os.path.normpath(os.path.join(workspace_root, content_file_path_from_metadata))
-            print(f"[ChunkService._find_document] Path from metadata is relative. Resolved against workspace root '{workspace_root}' to: '{resolved_content_path}'")
-
-        if not os.path.exists(resolved_content_path):
-            print(f"[ChunkService._find_document] Error: Resolved content file path does not exist: '{resolved_content_path}'")
-            # Try one more common case: path was relative to the JSON file's location itself
-            if not os.path.isabs(content_file_path_from_metadata):
-                path_relative_to_json = os.path.normpath(os.path.join(os.path.dirname(found_metadata_json_path), content_file_path_from_metadata))
-                print(f"[ChunkService._find_document] Trying path relative to JSON location: '{path_relative_to_json}'")
-                if os.path.exists(path_relative_to_json):
-                    resolved_content_path = path_relative_to_json
-                    print(f"[ChunkService._find_document] Success: Path relative to JSON location exists: '{resolved_content_path}'")
-                else:
-                    print(f"[ChunkService._find_document] Path relative to JSON location also does not exist.")
-                    return None
-            else: # If it was absolute and didn't exist, then it's just not there.
-                 return None
-
-
-        if not os.path.isfile(resolved_content_path):
-            print(f"[ChunkService._find_document] Error: Resolved content path is not a file: '{resolved_content_path}'")
+            # 假设相对于工作区根目录
+            resolved_path = os.path.normpath(os.path.join(workspace_root, path))
+            self.logger.debug(f"Resolved against workspace root: '{resolved_path}'")
+        return resolved_path
+    
+    def _try_path_relative_to_json(self, path: str, json_path: str, current_resolved_path: str) -> str:
+        """Try resolving path relative to JSON file location"""
+        if os.path.exists(current_resolved_path):
+            return current_resolved_path
+            
+        # 尝试相对于JSON文件的位置
+        path_relative_to_json = os.path.normpath(os.path.join(os.path.dirname(json_path), path))
+        self.logger.debug(f"Trying path relative to JSON: '{path_relative_to_json}'")
+        
+        if os.path.exists(path_relative_to_json):
+            self.logger.info(f"Path relative to JSON exists: '{path_relative_to_json}'")
+            return path_relative_to_json
+        
+        self.logger.warning("Neither absolute nor relative paths exist")
+        return current_resolved_path
+    
+    def _validate_resolved_path(self, resolved_path: str) -> Optional[str]:
+        """Validate that the resolved path exists and is a file"""
+        if not os.path.exists(resolved_path):
+            self.logger.warning(f"Resolved path does not exist: '{resolved_path}'")
             return None
             
-        print(f"[ChunkService._find_document] Successfully determined and validated content file path: '{resolved_content_path}'")
-        return resolved_content_path
+        # 确认是文件而不是目录
+        if not os.path.isfile(resolved_path):
+            self.logger.warning(f"Path is not a file: '{resolved_path}'")
+            return None
+            
+        self.logger.debug(f"Successfully validated path: '{resolved_path}'")
+        return resolved_path
+        
+    def _list_available_documents(self) -> List[str]:
+        """List all available documents in the system for debugging purposes"""
+        documents = []
+        
+        # Check each directory type and collect document information
+        documents.extend(self._list_documents_in_storage())
+        documents.extend(self._list_documents_in_metadata())
+        documents.extend(self._list_documents_in_temp())
+        
+        return documents
+        
+    def _list_documents_in_storage(self) -> List[str]:
+        """List documents in the storage/documents directory"""
+        documents = []
+        
+        # Get storage directory path
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        storage_dir = project_root / "storage" / "documents"
+        
+        # Check if directory exists and list files
+        if os.path.exists(storage_dir):
+            self.logger.debug(f"Checking directory: {storage_dir}")
+            documents.append(f"Documents in {storage_dir}:")
+            
+            # Add each file to the list
+            for filename in os.listdir(storage_dir):
+                if os.path.isfile(os.path.join(storage_dir, filename)):
+                    documents.append(f"  - {filename}")
+                    
+        return documents
+    
+    def _list_documents_in_metadata(self) -> List[str]:
+        """List documents in the metadata directory"""
+        documents = []
+        
+        # Get metadata directory path
+        metadata_dir = os.path.abspath(self.documents_dir)
+        
+        # Get storage directory path for comparison
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        storage_dir = str(project_root / "storage" / "documents")
+        
+        # Check if directory exists and is different from storage directory
+        if os.path.exists(metadata_dir) and metadata_dir != storage_dir:
+            self.logger.debug(f"Checking directory: {metadata_dir}")
+            documents.append(f"Documents in {metadata_dir}:")
+            
+            # Add each JSON file to the list
+            for filename in os.listdir(metadata_dir):
+                if filename.endswith('.json'):
+                    documents.append(f"  - {filename}")
+                    
+        return documents
+    
+    def _list_documents_in_temp(self) -> List[str]:
+        """List PDF documents in temporary directories"""
+        documents = []
+        
+        # Get list of temporary directories
+        temp_dirs = self._get_temp_directories()
+        
+        # Check each temporary directory
+        for temp_dir in temp_dirs:
+            if not os.path.exists(temp_dir):
+                continue
+                
+            # Find all PDF files in the directory
+            pdf_files = [f for f in os.listdir(temp_dir) if f.endswith('.pdf')]
+            
+            # Add PDF files to the list if any found
+            if pdf_files:
+                documents.append(f"PDF files in {temp_dir}:")
+                for filename in pdf_files:
+                    documents.append(f"  - {filename}")
+                    
+        return documents
+                
+    def _find_document(self, document_id: str) -> Optional[str]:
+        """
+        Finds the path to the actual content file (e.g., PDF, TXT) that needs to be chunked.
+        1. Looks in storage/documents directory (most common location)
+        2. Searches in temporary directories
+        3. Uses document_id to find and process metadata JSON
+        """
+        self.logger.info(f"Attempting to find content file for document_id: '{document_id}'")
+        
+        # Strategy 1: Check in storage/documents (most common location)
+        document_path = self._find_in_storage_directory(document_id)
+        if document_path:
+            return document_path
+        
+        # Strategy 2: Check temporary directories
+        document_path = self._search_in_temp_directories(document_id)
+        if document_path:
+            return document_path
+        
+        # Strategy 3: Find and process metadata
+        return self._find_via_metadata(document_id)
+    
+    def _find_in_storage_directory(self, document_id: str) -> Optional[str]:
+        """Look for document in the standard storage/documents directory"""
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        storage_dir = project_root / "storage" / "documents"
+        
+        # Try with common extensions
+        extensions = ['.pdf', '.docx', '.txt', '.md', '.csv']
+        for ext in extensions:
+            potential_path = os.path.join(storage_dir, f"{document_id}{ext}")
+            if os.path.exists(potential_path):
+                self.logger.info(f"Found document with exact name: {potential_path}")
+                return potential_path
+        
+        # Try filenames containing the ID
+        if os.path.exists(storage_dir):
+            for filename in os.listdir(storage_dir):
+                if document_id in filename:
+                    full_path = os.path.join(storage_dir, filename)
+                    if os.path.isfile(full_path):
+                        self.logger.info(f"Found document with ID in filename: {full_path}")
+                        return full_path
+        
+        return None
+    
+    def _find_via_metadata(self, document_id: str) -> Optional[str]:
+        """Find document by looking up and processing metadata"""
+        # Get metadata directory path
+        abs_metadata_dir = os.path.abspath(self.documents_dir)
+        self.logger.info(f"Metadata directory: '{abs_metadata_dir}'")
+        
+        # Calculate workspace root path
+        workspace_root = os.path.abspath(os.path.join(abs_metadata_dir, "..", ".."))
+        
+        # Look for metadata JSON file
+        metadata_json_path = self._find_metadata_file(document_id, abs_metadata_dir)
+        
+        # If no metadata found, try direct document path
+        if not metadata_json_path:
+            return self._check_direct_document_path(document_id, workspace_root)
+        
+        # Process metadata to find document path
+        return self._process_metadata(metadata_json_path, document_id, workspace_root)
+    
+    def _process_metadata(self, metadata_json_path: str, document_id: str, workspace_root: str) -> Optional[str]:
+        """Process metadata JSON to find document path"""
+        # Load metadata
+        metadata = self._load_metadata_json(metadata_json_path)
+        if not metadata:
+            return None
+        
+        # Extract content path from metadata
+        content_path = self._extract_path_from_metadata(metadata, metadata_json_path)
+        
+        # If no path found, try building one with extension
+        if not content_path:
+            content_path = self._try_build_path_with_extension(document_id, metadata, workspace_root)
+            if not content_path:
+                return None
+        
+        # Resolve the final content path
+        return self._resolve_content_path(content_path, workspace_root, metadata_json_path)
     
     def _extract_text(self, file_path: str, file_ext: str) -> str:
         """从文档中提取文本内容"""
         if file_ext == '.pdf':
             return self._extract_text_from_pdf(file_path)
-        elif file_ext == '.docx':
+        elif file_ext == DOCX_EXTENSION:
             return self._extract_text_from_docx(file_path)
         elif file_ext in ['.txt', '.md']:
             return self._extract_text_from_text_file(file_path)
@@ -407,89 +839,121 @@ class ChunkService:
         """从PDF文件中提取文本，保留更好的格式和布局"""
         try:
             import fitz  # PyMuPDF
+            self.logger.info(f"Extracting text from PDF: {os.path.basename(file_path)}")
             doc = fitz.open(file_path)
-            text = ""
-            
-            # 设置更详细的文本提取参数
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                
-                # 尝试用HTML模式提取文本以保留更多格式信息
-                try:
-                    page_text = page.get_text("html")
-                    page_text = re.sub(r'<(head|style)>.*?</(head|style)>', '', page_text, flags=re.DOTALL | re.IGNORECASE)
-                    page_text = re.sub(r'<img[^>]*>', '', page_text, flags=re.IGNORECASE)
-                    page_text = re.sub(r'<br[^>]*>', '\n', page_text, flags=re.IGNORECASE)
-                    page_text = re.sub(r'<p[^>]*>', '\n\n', page_text, flags=re.IGNORECASE)
-                    page_text = re.sub(r'<div[^>]*>', '\n', page_text, flags=re.IGNORECASE)
-                    page_text = re.sub(r'<li[^>]*>', '\n- ', page_text, flags=re.IGNORECASE)
-                    page_text = re.sub(r'<[^>]*>', '', page_text)
-                    page_text = html.unescape(page_text)
-                except Exception as e_html:
-                    print(f"[ChunkService._extract_text_from_pdf] HTML extraction failed for page {page_num}: {e_html}. Falling back to text.")
-                    page_text = page.get_text("text", flags=fitz.TEXT_DEHYPHENATE | fitz.TEXT_PRESERVE_LIGATURES | fitz.TEXT_PRESERVE_WHITESPACE)
-                
-                if page_num > 0:
-                    text += "\n\n"
-                text += f"[页码: {page_num + 1}]\n"
-                text += page_text.strip()
-            
-            lines = text.splitlines()
-            cleaned_lines = []
-            for line in lines:
-                if line.strip() or re.match(r'^\[页码:\s*\d+\]$', line):
-                     cleaned_lines.append(line)
-            text = '\n'.join(cleaned_lines)
-            
-            text = re.sub(r'(?<!\n) +', ' ', text)
-
-            paragraphs = []
-            current_paragraph_lines = []
-            for line in text.splitlines():
-                if re.match(r'^\[页码:\s*\d+\]$', line):
-                    if current_paragraph_lines:
-                        paragraphs.append(" ".join(current_paragraph_lines))
-                        current_paragraph_lines = []
-                    paragraphs.append(line)
-                elif not line.strip():
-                    if current_paragraph_lines:
-                        paragraphs.append(" ".join(current_paragraph_lines))
-                        current_paragraph_lines = []
-                else:
-                    current_paragraph_lines.append(line.strip())
-            
-            if current_paragraph_lines:
-                paragraphs.append(" ".join(current_paragraph_lines))
-
-            text = '\n\n'.join(paragraphs)
-            
-            return text
-            
+            text = self._extract_pages_from_pdf(doc)
+            return self._format_pdf_text(text)
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f"PDF文本提取失败: {str(e)}\n{error_details}")
-            try:
-                print("尝试使用备用方法提取PDF文本...")
-                doc = fitz.open(file_path)
-                text = ""
-                for page_num in range(len(doc)):
-                    page = doc[page_num]
-                    text += f"[页码: {page_num + 1}]\n"
-                    text += page.get_text("text")
-                    text += "\n\n"
-                return text
-            except Exception as e2:
-                raise Exception(f"PDF文本提取失败 (包括备用方法): {str(e)}, 备用方法错误: {str(e2)}")
+            self.logger.error(f"PDF text extraction failed: {str(e)}\n{error_details}")
+            return self._extract_pdf_fallback_method(file_path)
+    
+    def _extract_pages_from_pdf(self, doc) -> str:
+        """从PDF文档中提取页面文本"""
+        text = ""
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            page_text = self._extract_page_text(page, page_num)
+            
+            if page_num > 0:
+                text += "\n\n"
+            text += f"[页码: {page_num + 1}]\n"
+            text += page_text.strip()
+        
+        self.logger.debug(f"Extracted text from {len(doc)} pages")
+        return text
+    
+    def _extract_page_text(self, page, page_num) -> str:
+        """提取单个PDF页面的文本，首先尝试HTML格式，如果失败则回退到文本格式"""
+        try:
+            page_text = self._extract_html_text(page)
+        except Exception as e_html:
+            import fitz
+            self.logger.warning(f"HTML extraction failed for page {page_num}: {e_html}. Falling back to text.")
+            page_text = page.get_text("text", flags=fitz.TEXT_DEHYPHENATE | fitz.TEXT_PRESERVE_LIGATURES | fitz.TEXT_PRESERVE_WHITESPACE)
+        
+        return page_text
+    
+    def _extract_html_text(self, page) -> str:
+        """从PDF页面提取HTML文本并清理格式"""
+        page_text = page.get_text("html")
+        page_text = re.sub(r'<(head|style)>.*?</(head|style)>', '', page_text, flags=re.DOTALL | re.IGNORECASE)
+        page_text = re.sub(r'<img[^>]*>', '', page_text, flags=re.IGNORECASE)
+        page_text = re.sub(r'<br[^>]*>', '\n', page_text, flags=re.IGNORECASE)
+        page_text = re.sub(r'<p[^>]*>', '\n\n', page_text, flags=re.IGNORECASE)
+        page_text = re.sub(r'<div[^>]*>', '\n', page_text, flags=re.IGNORECASE)
+        page_text = re.sub(r'<li[^>]*>', '\n- ', page_text, flags=re.IGNORECASE)
+        page_text = re.sub(r'<[^>]*>', '', page_text)
+        page_text = html.unescape(page_text)
+        return page_text
+    
+    def _format_pdf_text(self, text) -> str:
+        """格式化提取的PDF文本，合并段落并保持页码标记"""
+        # 清理空行
+        lines = text.splitlines()
+        cleaned_lines = []
+        for line in lines:
+            if line.strip() or re.match(r'^\[页码:\s*\d+\]$', line):
+                cleaned_lines.append(line)
+        text = '\n'.join(cleaned_lines)
+        
+        # 规范化空格
+        text = re.sub(r'(?<!\n) +', ' ', text)
+
+        # 合并段落
+        paragraphs = self._merge_paragraphs(text)
+        return '\n\n'.join(paragraphs)
+    
+    def _merge_paragraphs(self, text) -> list:
+        """将行合并成段落，保持页码标记独立"""
+        paragraphs = []
+        current_paragraph_lines = []
+        
+        for line in text.splitlines():
+            if re.match(r'^\[页码:\s*\d+\]$', line):
+                if current_paragraph_lines:
+                    paragraphs.append(" ".join(current_paragraph_lines))
+                    current_paragraph_lines = []
+                paragraphs.append(line)
+            elif not line.strip():
+                if current_paragraph_lines:
+                    paragraphs.append(" ".join(current_paragraph_lines))
+                    current_paragraph_lines = []
+            else:
+                current_paragraph_lines.append(line.strip())
+        
+        if current_paragraph_lines:
+            paragraphs.append(" ".join(current_paragraph_lines))
+            
+        return paragraphs
+    
+    def _extract_pdf_fallback_method(self, file_path) -> str:
+        """PDF文本提取的备用方法"""
+        try:
+            self.logger.info("Attempting to extract PDF text using fallback method...")
+            import fitz
+            doc = fitz.open(file_path)
+            text = ""
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                text += f"[页码: {page_num + 1}]\n"
+                text += page.get_text("text")
+                text += "\n\n"
+            self.logger.info("PDF text extraction using fallback method successful")
+            return text
+        except Exception as e2:
+            self.logger.error(f"Fallback PDF extraction method failed: {e2}")
+            raise IOError(f"PDF文本提取失败 (包括备用方法): 备用方法错误: {str(e2)}")
     
     def _extract_text_from_docx(self, file_path: str) -> str:
         """从DOCX文件中提取文本"""
         try:
-            from docx import Document
-            doc = Document(file_path)
+            from docx import Document as DocxDocument
+            doc = DocxDocument(file_path)
             return "\n".join([para.text for para in doc.paragraphs])
         except Exception as e:
-            raise Exception(f"DOCX文本提取失败: {str(e)}")
+            raise IOError(f"DOCX文本提取失败: {str(e)}")
     
     def _extract_text_from_text_file(self, file_path: str) -> str:
         """从文本文件中提取文本"""
@@ -497,7 +961,7 @@ class ChunkService:
             with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                 return f.read()
         except Exception as e:
-            raise Exception(f"文本文件读取失败: {str(e)}")
+            raise IOError(f"文本文件读取失败: {str(e)}")
     
     def _chunk_by_char_count(self, text: str, chunk_size: int, overlap: int) -> List[Dict[str, Any]]:
         """按字符数分块"""
@@ -527,6 +991,103 @@ class ChunkService:
             
             if end == len(text):
                 break
+        
+        return chunks
+        
+    def _chunk_by_langchain_recursive(self, text: str, chunk_size: int, overlap: int) -> List[Dict[str, Any]]:
+        """使用Langchain递归文本拆分器进行分块"""
+        try:
+            # 创建递归文本拆分器
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=overlap,
+                separators=["\n\n", "\n", ". ", " ", ""]
+            )
+            
+            # 拆分文本
+            split_texts = splitter.split_text(text)
+            
+            # 转换为所需格式
+            chunks = []
+            start_pos = 0
+            
+            for i, chunk_text in enumerate(split_texts):
+                end_pos = start_pos + len(chunk_text)
+                
+                chunks.append({
+                    "content": chunk_text,
+                    "start_pos": start_pos,
+                    "end_pos": end_pos,
+                    "page": i // 3 + 1  # 估计页码
+                })
+                
+                start_pos = end_pos - overlap
+                
+            return chunks
+        except Exception as e:
+            self.logger.error(f"Error in Langchain chunking: {e}")
+            # 如果Langchain拆分失败，回退到字符计数拆分
+            return self._chunk_by_char_count(text, chunk_size, overlap)
+            
+    def _chunk_by_sentences(self, text: str, chunk_size: int, overlap: int) -> List[Dict[str, Any]]:
+        """按句子分块，保持句子完整性"""
+        # 首先按句号、问号、叹号拆分文本为句子
+        sentence_endings = r'[.!?]'
+        sentences = re.split(f'({sentence_endings}\\s)', text)
+        
+        # 合并句子和它们的标点符号
+        processed_sentences = []
+        for i in range(0, len(sentences)-1, 2):
+            if i+1 < len(sentences):
+                processed_sentences.append(sentences[i] + sentences[i+1])
+            else:
+                processed_sentences.append(sentences[i])
+                
+        # 如果最后一个元素没有标点，也添加进来
+        if len(sentences) % 2 == 1:
+            processed_sentences.append(sentences[-1])
+        
+        # 然后按大小分块，保持句子的完整性
+        chunks = []
+        current_chunk = ""
+        current_start = 0
+        start_pos = 0
+        
+        for sentence in processed_sentences:
+            # 如果添加这个句子会超出块大小，且当前块非空，则保存当前块
+            if len(current_chunk) + len(sentence) > chunk_size and current_chunk:
+                estimated_page = len(chunks) // 3 + 1
+                
+                chunks.append({
+                    "content": current_chunk,
+                    "start_pos": start_pos,
+                    "end_pos": start_pos + len(current_chunk),
+                    "page": estimated_page
+                })
+                
+                # 计算新的起始位置，考虑重叠
+                overlap_chars = min(overlap, len(current_chunk))
+                current_start = current_start + len(current_chunk) - overlap_chars
+                start_pos = current_start
+                
+                # 开始新的块
+                current_chunk = sentence
+            else:
+                # 添加句子到当前块
+                if current_chunk:
+                    current_chunk += " " + sentence
+                else:
+                    current_chunk = sentence
+        
+        # 不要忘记最后一个块
+        if current_chunk:
+            estimated_page = len(chunks) // 3 + 1
+            chunks.append({
+                "content": current_chunk,
+                "start_pos": start_pos,
+                "end_pos": start_pos + len(current_chunk),
+                "page": estimated_page
+            })
         
         return chunks
     
@@ -575,29 +1136,62 @@ class ChunkService:
         
         return chunks
     
-    def _chunk_by_heading(self, text: str, chunk_size: int, overlap: int) -> List[Dict[str, Any]]:
+    def _is_heading(self, line: str) -> bool:
+        """检查一行文本是否为标题"""
+        return (line.startswith('#') or 
+                (line.isupper() and len(line) < 100 and line.strip()))
+    
+    def _create_formatted_section(self, current_section: Dict[str, str], start_pos: int, 
+                                 end_pos: int, section_number: int) -> Dict[str, Any]:
+        """创建格式化的章节数据"""
+        return {
+            "content": current_section["content"],
+            "title": current_section["title"],
+            "start_pos": start_pos,
+            "end_pos": end_pos,
+            "page": section_number + 1  # 估算页面
+        }
+    
+    def _append_line_to_section(self, current_section: Dict[str, str], line: str) -> None:
+        """将行添加到当前章节内容"""
+        if current_section["content"]:
+            current_section["content"] += "\n" + line
+        else:
+            current_section["content"] = line
+    
+    def _process_current_section(self, sections: List[Dict[str, Any]], current_section: Dict[str, str], 
+                           start_pos: int, current_position: int) -> None:
+        """处理并保存当前章节到章节列表中"""
+        if current_section["content"] or current_section["title"]:
+            formatted_section = self._create_formatted_section(
+                current_section, start_pos, current_position, len(sections)
+            )
+            sections.append(formatted_section)
+            
+    def _chunk_by_heading(self, text: str) -> List[Dict[str, Any]]:
         """按标题分块"""
         lines = text.split('\n')
         sections = []
         current_section = {"title": "", "content": ""}
+        current_position = 0
+        start_pos = 0
         
         for line in lines:
-            is_heading = (line.startswith('#') or 
-                         (line.isupper() and len(line) < 100 and line.strip()))
-            
-            if is_heading:
-                if current_section["content"]:
-                    sections.append(current_section)
+            if self._is_heading(line):
+                # 处理当前章节
+                self._process_current_section(sections, current_section, start_pos, current_position)
                 
+                # 开始新章节
                 current_section = {"title": line, "content": ""}
+                start_pos = current_position
             else:
-                if current_section["content"]:
-                    current_section["content"] += "\n" + line
-                else:
-                    current_section["content"] = line
+                # 添加到当前章节内容
+                self._append_line_to_section(current_section, line)
+            
+            current_position += len(line) + 1  # +1 是为了换行符
         
-        if current_section["content"] or current_section["title"]:
-            sections.append(current_section)
+        # 处理最后一个章节
+        self._process_current_section(sections, current_section, start_pos, current_position)
         
         return sections
 
@@ -607,28 +1201,39 @@ class ChunkService:
     
     def _find_document_for_tests(self, document_id: str) -> Optional[str]:
         """Special document finder for test environment that's more flexible with file paths"""
-        print(f"[ChunkService._find_document_for_tests] Looking for document ID '{document_id}' in test environment")
+        self.logger.info(f"Looking for document ID '{document_id}' in test environment")
         
         # First try the normal method
         document_path = self._find_document(document_id)
         if document_path:
             return document_path
             
-        # Search in common temp directories
+        # Search in temp directories with different strategies
         temp_dir = tempfile.gettempdir()
         
-        # First, look for exact match with document_id
+        # Try exact match first
+        exact_match = self._find_exact_match_in_temp(document_id, temp_dir)
+        if exact_match:
+            return exact_match
+            
+        # Try newest file as fallback
+        return self._find_newest_pdf_in_temp(temp_dir)
+    
+    def _find_exact_match_in_temp(self, document_id: str, temp_dir: str) -> Optional[str]:
+        """Find exact match for document_id in temp directory"""
         for temp_filename in os.listdir(temp_dir):
             if temp_filename.endswith('.pdf') and document_id in temp_filename:
                 temp_filepath = os.path.join(temp_dir, temp_filename)
                 if os.path.exists(temp_filepath):
-                    print(f"[ChunkService._find_document_for_tests] Found test file with matching ID: '{temp_filepath}'")
+                    self.logger.info(f"Found test file with matching ID: '{temp_filepath}'")
                     return temp_filepath
-        
-        # If no exact match, try to find the newest PDF (created in the last minute)
+        return None
+    
+    def _find_newest_pdf_in_temp(self, temp_dir: str) -> Optional[str]:
+        """Find the newest PDF file in temp directory (created in the last minute)"""
         newest_file = None
         newest_time = 0
-        one_minute_ago = datetime.datetime.now().timestamp() - 60  # Files created in the last minute
+        one_minute_ago = datetime.datetime.now().timestamp() - 60
         
         for temp_filename in os.listdir(temp_dir):
             if temp_filename.endswith('.pdf'):
@@ -642,7 +1247,6 @@ class ChunkService:
                     newest_file = temp_filepath
         
         if newest_file:
-            print(f"[ChunkService._find_document_for_tests] Found newest PDF in temp directory: '{newest_file}'")
-            return newest_file
-            
-        return None
+            self.logger.info(f"Found newest PDF in temp directory: '{newest_file}'")
+        
+        return newest_file

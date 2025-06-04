@@ -6,6 +6,8 @@ import { loadConfig } from '../../utils/configLoader';
 function SearchModule({ indices = [], documents = [], loading, error, onSearch }) { // Add documents prop
   const { t } = useLanguage();
   const [selectedIndex, setSelectedIndex] = useState('');
+  const [selectedCollection, setSelectedCollection] = useState('');
+  const [availableCollections, setAvailableCollections] = useState([]);
   const [query, setQuery] = useState('');
   const [topK, setTopK] = useState(5);
   const [threshold, setThreshold] = useState(0.5);
@@ -22,15 +24,57 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
     
     fetchConfig();
   }, []);
+  
+  // Extract and update available collections whenever indices change
+  useEffect(() => {
+    if (Array.isArray(indices) && indices.length > 0) {
+      // Get unique collection names
+      // console.log('[SearchModule] Processing indices for collections:', indices);
+      
+      // Debug raw values - make sure collection_name is actually present
+      const rawValues = indices.map(idx => {
+        return {
+          index_id: idx.index_id,
+          collection_name: idx.collection_name || 'undefined',
+          hasCollectionName: !!idx.collection_name,
+          document_id: idx.document_id
+        }
+      });
+      // console.log('[SearchModule] Raw collection values in indices:', rawValues);
+      
+      // Debug additional info about collection structure
+      // console.log('[SearchModule] Index keys:', indices.length > 0 ? Object.keys(indices[0]) : 'No indices');
+      // console.log('[SearchModule] First few indices sample:', indices.slice(0, 3));
+      
+      // Filter non-empty collection names and create unique set
+      const uniqueCollections = [...new Set(
+        indices
+          .map(idx => idx.collection_name)
+          .filter(name => name && name.trim() !== '')
+      )];
+      
+      // console.log('[SearchModule] Found collections:', uniqueCollections);
+      setAvailableCollections(uniqueCollections);
+    } else {
+      // console.log('[SearchModule] No indices found or indices is not an array:', indices);
+      setAvailableCollections([]);
+    }
+  }, [indices]);
 
   // 处理表单提交
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedIndex || !query.trim()) return;
+    if ((!selectedIndex && !selectedCollection) || !query.trim()) return;
     
     try {
-      // Pass similarity_threshold parameter (not threshold) and min_chars parameter to match the backend API
-      const results = await onSearch(selectedIndex, query, topK, threshold, minChars);
+      // If a collection is selected, pass both the index and collection
+      // If not, just use the selected index
+      let results;
+      if (selectedCollection) {
+        results = await onSearch(selectedIndex, query, topK, threshold, minChars, selectedCollection);
+      } else {
+        results = await onSearch(selectedIndex, query, topK, threshold, minChars);
+      }
       setSearchResults(results);
     } catch (err) {
       // 错误已在 App.jsx 中处理
@@ -45,29 +89,63 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
         <p className="text-gray-600 mb-6">{t('searchDesc')}</p>
         
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Always show the collection dropdown, even if empty */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('selectCollection')}
+            </label>
+            <select
+              value={selectedCollection}
+              onChange={(e) => {
+                setSelectedCollection(e.target.value);
+                // Reset index selection when collection changes
+                setSelectedIndex('');
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+            >
+              <option value="">{t('allIndices')}</option>
+              {availableCollections.length > 0 ? (
+                availableCollections.map(collection => (
+                  <option key={collection} value={collection}>{collection}</option>
+                ))
+              ) : (
+                <option value="" disabled>{t('noCollectionsAvailable', 'No collections available')}</option>
+              )}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {availableCollections.length > 0 
+                ? t('selectCollectionDescription', 'Select a collection to search across all its indices, or select a specific index below')
+                : t('noCollectionsHint', 'No collections found. Create collections in the Vector Indexing module.')}
+            </p>
+          </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t('selectIndex')}
+              {selectedCollection ? t('selectIndexFromCollection') : t('selectIndex')}
             </label>
             <select
               value={selectedIndex}
               onChange={(e) => setSelectedIndex(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
-              required
+              required={!selectedCollection}
               disabled={!Array.isArray(indices) || indices.length === 0}
             >
               <option value="">{!Array.isArray(indices) || indices.length === 0 ? t('noIndicesAvailable') : t('selectIndex')}</option>
               {/* Ensure indices and documents are arrays before mapping */}
-              {Array.isArray(indices) && Array.isArray(documents) && indices.map((idx) => {
-                const doc = documents.find(d => d.id === idx.document_id);
-                const displayName = doc ? doc.filename : idx.document_id;
-                const indexTypeName = config?.vector_databases?.[idx.vector_db]?.name || idx.vector_db;
-                return (
-                  <option key={idx.index_id} value={idx.index_id}>
-                    {displayName} ({t('indexType')}: {indexTypeName}, ID: {idx.index_id})
-                  </option>
-                );
-              })}
+              {Array.isArray(indices) && Array.isArray(documents) && 
+                // If a collection is selected, filter indices by that collection
+                indices
+                  .filter(idx => !selectedCollection || idx.collection_name === selectedCollection)
+                  .map((idx) => {
+                    const doc = documents.find(d => d.id === idx.document_id);
+                    const displayName = doc ? doc.filename : idx.document_id;
+                    const indexTypeName = config?.vector_databases?.[idx.vector_db]?.name || idx.vector_db;
+                    return (
+                      <option key={idx.index_id} value={idx.index_id}>
+                        {displayName} ({t('indexType')}: {indexTypeName}, ID: {idx.index_id})
+                      </option>
+                    );
+                })}
             </select>
           </div>
           
@@ -136,9 +214,9 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
           <div>
             <button
               type="submit"
-              disabled={loading || !selectedIndex || !query.trim()}
+              disabled={loading || (!selectedIndex && !selectedCollection) || !query.trim()}
               className={`px-4 py-2 rounded-md text-white ${
-                loading || !selectedIndex || !query.trim()
+                loading || (!selectedIndex && !selectedCollection) || !query.trim()
                   ? 'bg-purple-400 cursor-not-allowed'
                   : 'bg-purple-600 hover:bg-purple-700'
               }`}
