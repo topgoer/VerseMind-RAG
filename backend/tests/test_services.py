@@ -36,7 +36,8 @@ class TestChunkService:
     @patch('os.makedirs')
     def test_init(self, mock_makedirs):
         service = ChunkService()
-        assert service.chunks_dir == "02-chunked-docs"
+        assert os.path.basename(service.chunks_dir) == "02-chunked-docs"
+        assert os.path.basename(os.path.dirname(service.chunks_dir)) == "backend"
 
 class TestParseService:
     """测试文档解析服务"""
