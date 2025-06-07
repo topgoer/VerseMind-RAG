@@ -172,10 +172,3 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
         import traceback
         traceback.print_exc()
         raise
-ediately")
-    
-    except Exception as e:
-        print(f"Small PDF test failed with exception: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise

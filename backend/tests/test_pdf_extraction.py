@@ -493,14 +493,3 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
         import traceback
         traceback.print_exc()
         raise
-l}: {str(e)}")
-                
-        if doc_id_small:
-            cleaned_count = document_cleanup(doc_id_small)
-            print(f"Cleaned up {cleaned_count} files for document {doc_id_small} immediately")
-    
-    except Exception as e:
-        print(f"Small PDF test failed with exception: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise

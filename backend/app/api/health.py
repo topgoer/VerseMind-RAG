@@ -3,6 +3,7 @@ import os
 
 router = APIRouter()
 
+
 @router.get("/")
 async def health_check():
     """
@@ -27,5 +28,5 @@ async def health_check():
         "indices_dir": indices_path,
         "indices_dir_exists": indices_exists,
         "indices_details": indices_details,
-        "api_version": "0.2.0"
+        "api_version": "0.2.0",
     }

@@ -6,6 +6,7 @@ from app.services.generate_service import GenerateService
 router = APIRouter()
 generate_service = GenerateService()
 
+
 @router.post("")
 @router.post("/text")
 async def generate_text(
@@ -15,14 +16,16 @@ async def generate_text(
     model: str = Body(...),
     temperature: float = Body(0.7),
     max_tokens: Optional[int] = Body(None),
-    image_data: Optional[str] = Body(None)
+    image_data: Optional[str] = Body(None),
 ):
     """
     基于检索结果生成文本，可选择包含图片数据
     """
     # 只用 config，不传 max_tokens 给服务层
     try:
-        result = generate_service.generate_text(search_id, prompt, provider, model, temperature, image_data=image_data)
+        result = generate_service.generate_text(
+            search_id, prompt, provider, model, temperature, image_data=image_data
+        )
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -30,6 +33,7 @@ async def generate_text(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文本生成失败: {str(e)}")
+
 
 @router.post("/from_search")
 async def generate_from_search(
@@ -41,7 +45,7 @@ async def generate_from_search(
     max_tokens: Optional[int] = Body(None),
     top_p: float = Body(1.0),
     stream: bool = Body(False),
-    image_data: Optional[str] = Body(None)
+    image_data: Optional[str] = Body(None),
 ):
     """
     基于搜索结果生成文本
@@ -62,14 +66,19 @@ async def generate_from_search(
         if not search_id:
             raise ValueError("搜索结果ID不能为空")
 
-        result = generate_service.generate_text(search_id, prompt, provider, model, temperature, image_data=image_data)
+        result = generate_service.generate_text(
+            search_id, prompt, provider, model, temperature, image_data=image_data
+        )
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"基于搜索结果生成文本失败: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"基于搜索结果生成文本失败: {str(e)}"
+        )
+
 
 @router.get("/models")
 async def get_generation_models():

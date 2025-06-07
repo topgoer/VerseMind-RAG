@@ -407,27 +407,3 @@ if __name__ == "__main__":
 
     if count == 0:
         print("No test files found to clean.")
-d)
-    """
-    cleaner = TestFileCleanup()
-    
-    if document_id:
-        return cleaner.clean_document_files(document_id)
-    else:
-        return cleaner.clean_all_test_files()
-
-
-if __name__ == "__main__":
-    # When run directly, clean all test files
-    logging.basicConfig(level=logging.INFO,
-                       format='[%(asctime)s] %(levelname)s - %(message)s')
-    
-    cleaner = TestFileCleanup()
-    count, files = cleaner.clean_all_test_files()
-    
-    print(f"Cleaned {count} test files:")
-    for file in files:
-        print(f"  - {file}")
-    
-    if count == 0:
-        print("No test files found to clean.")

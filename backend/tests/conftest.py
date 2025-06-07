@@ -13,7 +13,7 @@ from app.utils.test_cleanup import TestFileCleanup, cleanup_test_files
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Set the TEST_ENV environment variable to enable test-specific behavior
-os.environ['TEST_ENV'] = 'true'
+os.environ["TEST_ENV"] = "true"
 
 
 @pytest.fixture(scope="session")

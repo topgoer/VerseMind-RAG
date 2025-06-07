@@ -7,11 +7,10 @@ from app.services.embed_service import EmbedService
 router = APIRouter()
 embed_service = EmbedService()
 
+
 @router.post("/create")
 async def create_embeddings(
-    document_id: str = Body(...),
-    provider: str = Body(...),
-    model: str = Body(...)
+    document_id: str = Body(...), provider: str = Body(...), model: str = Body(...)
 ):
     """
     将文本块转换为向量表示
@@ -26,6 +25,7 @@ async def create_embeddings(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"嵌入生成失败: {str(e)}")
 
+
 @router.get("/models")
 async def get_embedding_models():
     """
@@ -33,8 +33,13 @@ async def get_embedding_models():
     """
     return embed_service.get_embedding_models()
 
+
 @router.get("/list")
-async def list_embeddings(document_id: Optional[str] = Query(None, description="Optional document ID to filter embeddings")):
+async def list_embeddings(
+    document_id: Optional[str] = Query(
+        None, description="Optional document ID to filter embeddings"
+    ),
+):
     """
     获取所有嵌入向量的列表，可选择按文档ID过滤
     """
@@ -55,8 +60,11 @@ async def list_embeddings(document_id: Optional[str] = Query(None, description="
 
         return result
     except Exception as e:
-        logging.error(f"Error handling embeddings/list request: {str(e)}", exc_info=True)
+        logging.error(
+            f"Error handling embeddings/list request: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=f"获取嵌入列表失败: {str(e)}")
+
 
 @router.delete("/{embedding_id}")
 async def delete_embedding(embedding_id: str):

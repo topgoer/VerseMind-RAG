@@ -21,7 +21,7 @@ versemind_data = {
     "title": None,
     "reference": None,
     "knowledge_bases": {},
-    "last_updated": None
+    "last_updated": None,
 }
 
 
@@ -62,39 +62,45 @@ def start_mcp_server(port: int = 3005, host: str = "0.0.0.0") -> bool:
             logger.info(f"  - {tool.name}: {tool.description}")
 
         logger.info(f"Starting MCP server on http://{host}:{port}/mcp")
-          # Start the server
+        # Start the server
         try:
             # Patch for uvicorn logging issue with sys.stdout not having isatty
             import uvicorn.logging
+
             # Create a patched formatter class that doesn't check isatty
             original_init = uvicorn.logging.ColourizedFormatter.__init__
+
             def patched_init(self, *args, **kwargs):
-                kwargs['use_colors'] = False  # Force disable colors
-                if 'fmt' not in kwargs and not args:
-                    kwargs['fmt'] = "%(levelprefix)s %(message)s"
+                kwargs["use_colors"] = False  # Force disable colors
+                if "fmt" not in kwargs and not args:
+                    kwargs["fmt"] = "%(levelprefix)s %(message)s"
                 original_init(self, *args, **kwargs)
 
             # Apply the patch
             uvicorn.logging.ColourizedFormatter.__init__ = patched_init
 
             # Run the MCP server
-            service.mcp.run(transport='streamable-http')
+            service.mcp.run(transport="streamable-http")
         except Exception as e:
             logger.error(f"Error in MCP server: {str(e)}")
             import traceback
+
             logger.error(traceback.format_exc())
 
     try:
         # Start the server in a separate thread
         logger.info(f"Starting MCP server thread on port {port}...")
         mcp_server_thread = threading.Thread(target=run_server)
-        mcp_server_thread.daemon = True  # Allow the thread to be terminated when the main process exits
+        mcp_server_thread.daemon = (
+            True  # Allow the thread to be terminated when the main process exits
+        )
         mcp_server_thread.start()
         logger.info("MCP server thread started")
         return True
     except Exception as e:
         logger.error(f"Failed to start MCP server: {str(e)}")
         import traceback
+
         logger.error(traceback.format_exc())
         return False
 
@@ -119,7 +125,7 @@ def stop_mcp_server() -> bool:
         # daemon flag to terminate the thread when the main process exits.
 
         # Signal could be implemented with a stop flag in the server instance
-        if mcp_server_instance and hasattr(mcp_server_instance.mcp, 'stop'):
+        if mcp_server_instance and hasattr(mcp_server_instance.mcp, "stop"):
             mcp_server_instance.mcp.stop()
 
         # Mark as stopped
@@ -132,7 +138,9 @@ def stop_mcp_server() -> bool:
         return False
 
 
-def set_versemind_data(title: str, reference: str, kb_id: str = None, metadata: Dict[str, Any] = None) -> bool:
+def set_versemind_data(
+    title: str, reference: str, kb_id: str = None, metadata: Dict[str, Any] = None
+) -> bool:
     """Set VerseMind data (title and reference) for the MCP service.
 
     This function updates the global VerseMind data state and
@@ -161,11 +169,12 @@ def set_versemind_data(title: str, reference: str, kb_id: str = None, metadata: 
             versemind_data["knowledge_bases"][kb_id] = {
                 "title": title,
                 "content": reference,
-                "metadata": metadata or {}
+                "metadata": metadata or {},
             }
 
         # Set global variables in the main module for backward compatibility
         import __main__
+
         __main__.title = title
         __main__.reference = reference
 
@@ -177,7 +186,9 @@ def set_versemind_data(title: str, reference: str, kb_id: str = None, metadata: 
             # If we had added knowledge base management to the service
             # we would update that here too
 
-        logger.info(f"Set VerseMind data: title='{title}' and reference data of length {len(reference)}")
+        logger.info(
+            f"Set VerseMind data: title='{title}' and reference data of length {len(reference)}"
+        )
         return True
     except Exception as e:
         logger.error(f"Error setting VerseMind data: {str(e)}")
@@ -200,14 +211,16 @@ def get_versemind_data() -> Dict[str, Any]:
                 "title": mcp_server_instance.title,
                 "reference": mcp_server_instance.reference,
                 "last_updated": versemind_data.get("last_updated"),
-                "knowledge_bases": versemind_data.get("knowledge_bases", {})
+                "knowledge_bases": versemind_data.get("knowledge_bases", {}),
             }
 
             # Add system information
             try:
                 # Try to get list of available knowledge bases
                 if hasattr(mcp_server_instance, "_get_knowledge_bases"):
-                    data["available_knowledge_bases"] = mcp_server_instance._get_knowledge_bases()
+                    data["available_knowledge_bases"] = (
+                        mcp_server_instance._get_knowledge_bases()
+                    )
             except Exception:
                 # Ignore errors in enhancement data
                 pass
@@ -220,15 +233,12 @@ def get_versemind_data() -> Dict[str, Any]:
 
         # Last resort: try main module
         import __main__
+
         return {
             "title": getattr(__main__, "title", None),
             "reference": getattr(__main__, "reference", None),
-            "last_updated": None
+            "last_updated": None,
         }
     except Exception as e:
         logger.error(f"Error getting VerseMind data: {str(e)}")
-        return {
-            "title": None,
-            "reference": None,
-            "error": str(e)
-        }
+        return {"title": None, "reference": None, "error": str(e)}

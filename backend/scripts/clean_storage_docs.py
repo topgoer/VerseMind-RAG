@@ -15,25 +15,35 @@ from app.utils.test_cleanup import TestFileCleanup
 # Add the parent directory to sys.path to import app modules
 sys.path.append(str(Path(__file__).parent.parent))
 
+
 def main():
     """Clean up temporary test files in storage/documents directory"""
-    logging.basicConfig(level=logging.INFO,
-                      format='[%(asctime)s] %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s"
+    )
 
     logger = logging.getLogger(__name__)
     logger.info("Starting storage/documents test file cleanup...")
 
     # Define the storage documents directory
     project_root = Path(__file__).parent.parent.parent
-    storage_docs_dir = os.path.join(project_root, 'storage', 'documents')
+    storage_docs_dir = os.path.join(project_root, "storage", "documents")
 
     if not os.path.exists(storage_docs_dir):
         logger.error(f"Directory not found: {storage_docs_dir}")
         return
 
     # Print stats about files before cleanup
-    count_before = len([f for f in os.listdir(storage_docs_dir) if os.path.isfile(os.path.join(storage_docs_dir, f))])
-    logger.info(f"Found {count_before} files in storage/documents directory before cleanup")
+    count_before = len(
+        [
+            f
+            for f in os.listdir(storage_docs_dir)
+            if os.path.isfile(os.path.join(storage_docs_dir, f))
+        ]
+    )
+    logger.info(
+        f"Found {count_before} files in storage/documents directory before cleanup"
+    )
 
     # Create a TestFileCleanup instance
     cleaner = TestFileCleanup()
@@ -53,9 +63,18 @@ def main():
     total_count = count
 
     # Print final stats
-    count_after = len([f for f in os.listdir(storage_docs_dir) if os.path.isfile(os.path.join(storage_docs_dir, f))])
+    count_after = len(
+        [
+            f
+            for f in os.listdir(storage_docs_dir)
+            if os.path.isfile(os.path.join(storage_docs_dir, f))
+        ]
+    )
     logger.info(f"Total files cleaned: {total_count}")
-    logger.info(f"Files in storage/documents: {count_before} before, {count_after} after cleanup")
+    logger.info(
+        f"Files in storage/documents: {count_before} before, {count_after} after cleanup"
+    )
+
 
 if __name__ == "__main__":
     main()

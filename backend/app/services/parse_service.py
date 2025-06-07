@@ -11,19 +11,23 @@ from app.core.logger import get_logger_with_env_level
 # Initialize logger using the environment-based configuration
 logger = get_logger_with_env_level(__name__)
 
+
 class ParseService:
     """文档解析服务，支持全文、分页、标题结构解析"""
 
     def __init__(self, chunks_dir=None, parsed_dir=None):
         # Update directories according to the naming convention using pathlib for consistency
         from pathlib import Path
+
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         self.storage_dir = str(project_root)
-        self.documents_dir = str(project_root / 'storage' / 'documents')
+        self.documents_dir = str(project_root / "storage" / "documents")
 
         # Use absolute paths with project_root as base directory
-        self.chunks_dir = chunks_dir or str(project_root / 'backend' / '02-chunked-docs')
-        self.parsed_dir = parsed_dir or str(project_root / 'backend' / '03-parsed-docs')
+        self.chunks_dir = chunks_dir or str(
+            project_root / "backend" / "02-chunked-docs"
+        )
+        self.parsed_dir = parsed_dir or str(project_root / "backend" / "03-parsed-docs")
 
         # Create directories if they don't exist
         os.makedirs(self.documents_dir, exist_ok=True)
@@ -31,14 +35,18 @@ class ParseService:
         os.makedirs(self.parsed_dir, exist_ok=True)
 
         self.logger = logging.getLogger(__name__)
-        self.logger.debug(f"ParseService initialized. Documents_dir: {self.documents_dir}, Chunks_dir: {self.chunks_dir}, Parsed_dir: {self.parsed_dir}") # Added log
+        self.logger.debug(
+            f"ParseService initialized. Documents_dir: {self.documents_dir}, Chunks_dir: {self.chunks_dir}, Parsed_dir: {self.parsed_dir}"
+        )  # Added log
 
-    def parse_document(self,
-                       document_id: str,
-                       strategy: str,
-                       page_map: List[Dict[str, Any]] = None,
-                       extract_tables: bool = False,
-                       extract_images: bool = False) -> Dict[str, Any]:
+    def parse_document(
+        self,
+        document_id: str,
+        strategy: str,
+        page_map: List[Dict[str, Any]] = None,
+        extract_tables: bool = False,
+        extract_images: bool = False,
+    ) -> Dict[str, Any]:
         """
         解析文档结构，支持直接传入 page_map
 
@@ -51,7 +59,9 @@ class ParseService:
         返回:
             包含解析结果的字典
         """
-        self.logger.debug(f"Starting parse_document for document_id: {document_id} with strategy: {strategy}")
+        self.logger.debug(
+            f"Starting parse_document for document_id: {document_id} with strategy: {strategy}"
+        )
 
         # 验证文档存在并获取路径
         document_path = self._validate_document_exists(document_id)
@@ -68,20 +78,31 @@ class ParseService:
         parsed_content = self._parse_content_by_strategy(strategy, chunk_data)
 
         # 提取表格和图像
-        tables, images = self._extract_media_content(document_path, extract_tables, extract_images)
+        tables, images = self._extract_media_content(
+            document_path, extract_tables, extract_images
+        )
 
         # 构建结果
         result = self._build_parse_result(metadata, parsed_content, tables, images)
 
         # 计算统计数据
-        stats = self._calculate_content_statistics(strategy, parsed_content, tables, images)
+        stats = self._calculate_content_statistics(
+            strategy, parsed_content, tables, images
+        )
 
         # 保存结果文件
         result_file = self._save_parse_result(document_id, timestamp, result)
 
         # 返回最终结果
-        return self._build_final_response(document_id, parse_id, strategy, timestamp,
-                                         result_file, stats, parsed_content)
+        return self._build_final_response(
+            document_id,
+            parse_id,
+            strategy,
+            timestamp,
+            result_file,
+            stats,
+            parsed_content,
+        )
 
     def _get_sample_content(self, parsed_content, strategy, max_items=10):
         """获取解析内容的样本，用于前端展示"""
@@ -100,11 +121,9 @@ class ParseService:
 
         # 添加标题
         if "title" in parsed_content and parsed_content["title"]:
-            sample.append({
-                "type": "heading",
-                "level": 1,
-                "text": parsed_content["title"]
-            })
+            sample.append(
+                {"type": "heading", "level": 1, "text": parsed_content["title"]}
+            )
 
         # 添加章节内容
         sections = parsed_content.get("sections", [])
@@ -121,27 +140,30 @@ class ParseService:
     def _add_section_sample(self, sample, section, section_index):
         """添加章节样本内容"""
         # 添加章节标题
-        sample.append({
-            "type": "heading",
-            "level": section.get("level", 1),
-            "text": section.get("title", f"Section {section_index+1}")
-        })
+        sample.append(
+            {
+                "type": "heading",
+                "level": section.get("level", 1),
+                "text": section.get("title", f"Section {section_index + 1}"),
+            }
+        )
 
         # 添加段落样本
-        self._add_paragraphs_sample(sample, section.get("paragraphs", []), max_paragraphs=2)
+        self._add_paragraphs_sample(
+            sample, section.get("paragraphs", []), max_paragraphs=2
+        )
 
         # 添加子章节样本
-        self._add_subsections_sample(sample, section.get("subsections", []), section_index)
+        self._add_subsections_sample(
+            sample, section.get("subsections", []), section_index
+        )
 
     def _add_paragraphs_sample(self, sample, paragraphs, max_paragraphs):
         """添加段落样本"""
         for j, para in enumerate(paragraphs):
             if j >= max_paragraphs:
                 break
-            sample.append({
-                "type": "paragraph",
-                "text": para.get("text", "")
-            })
+            sample.append({"type": "paragraph", "text": para.get("text", "")})
 
     def _add_subsections_sample(self, sample, subsections, section_index):
         """添加子章节样本"""
@@ -150,14 +172,20 @@ class ParseService:
                 break
 
             # 添加子章节标题
-            sample.append({
-                "type": "heading",
-                "level": subsection.get("level", 2),
-                "text": subsection.get("title", f"Subsection {section_index+1}.{k+1}")
-            })
+            sample.append(
+                {
+                    "type": "heading",
+                    "level": subsection.get("level", 2),
+                    "text": subsection.get(
+                        "title", f"Subsection {section_index + 1}.{k + 1}"
+                    ),
+                }
+            )
 
             # 添加子章节段落
-            self._add_paragraphs_sample(sample, subsection.get("paragraphs", []), max_paragraphs=1)
+            self._add_paragraphs_sample(
+                sample, subsection.get("paragraphs", []), max_paragraphs=1
+            )
 
     def _get_mixed_content_sample(self, parsed_content, max_items):
         """获取混合内容（文本和表格）的样本"""
@@ -169,15 +197,19 @@ class ParseService:
 
             item_type = item.get("type")
             if item_type == "text":
-                sample.append({
-                    "type": "paragraph",
-                    "text": item.get("content", "").strip()[:200]  # 限制长度
-                })
+                sample.append(
+                    {
+                        "type": "paragraph",
+                        "text": item.get("content", "").strip()[:200],  # 限制长度
+                    }
+                )
             elif item_type == "table":
-                sample.append({
-                    "type": "table",
-                    "text": "表格数据"  # 简化表格表示
-                })
+                sample.append(
+                    {
+                        "type": "table",
+                        "text": "表格数据",  # 简化表格表示
+                    }
+                )
 
         return sample
 
@@ -185,7 +217,9 @@ class ParseService:
         """
         列出指定文档的所有解析结果
         """
-        self.logger.debug(f"Listing parsed results for document_id: {document_id} in directory: {self.parsed_dir}") # Added log
+        self.logger.debug(
+            f"Listing parsed results for document_id: {document_id} in directory: {self.parsed_dir}"
+        )  # Added log
         parsed_dir = self.parsed_dir
         os.makedirs(parsed_dir, exist_ok=True)
         results = []
@@ -193,28 +227,36 @@ class ParseService:
             if fname.startswith(document_id) and fname.endswith(".json"):
                 with open(os.path.join(parsed_dir, fname), "r", encoding="utf-8") as f:
                     results.append(json.load(f))
-        self.logger.debug(f"Found {len(results)} parsed files for document_id: {document_id}") # Added log
+        self.logger.debug(
+            f"Found {len(results)} parsed files for document_id: {document_id}"
+        )  # Added log
         return results
 
     def _find_document(self, document_id: str) -> Optional[str]:
         """查找指定ID的文档路径"""
-        self.logger.debug(f"Searching for document with ID: {document_id} in {self.documents_dir}") # Added log
+        self.logger.debug(
+            f"Searching for document with ID: {document_id} in {self.documents_dir}"
+        )  # Added log
         if os.path.exists(self.documents_dir):
             for filename in os.listdir(self.documents_dir):
                 if document_id in filename:
-                    self.logger.debug(f"Found document: {filename}") # Added log
+                    self.logger.debug(f"Found document: {filename}")  # Added log
                     return os.path.join(self.documents_dir, filename)
 
         # If not found in documents_dir, try the storage/documents directory
-        storage_dir = os.path.join(self.storage_dir, 'storage', 'documents')
+        storage_dir = os.path.join(self.storage_dir, "storage", "documents")
         if os.path.exists(storage_dir) and storage_dir != self.documents_dir:
             self.logger.debug(f"Trying alternative directory: {storage_dir}")
             for filename in os.listdir(storage_dir):
                 if document_id in filename:
-                    self.logger.debug(f"Found document in storage/documents: {filename}")
+                    self.logger.debug(
+                        f"Found document in storage/documents: {filename}"
+                    )
                     return os.path.join(storage_dir, filename)
 
-        self.logger.warning(f"Document with ID: {document_id} not found in {self.documents_dir} or alternative locations") # Added log
+        self.logger.warning(
+            f"Document with ID: {document_id} not found in {self.documents_dir} or alternative locations"
+        )  # Added log
         return None
 
     def _find_chunk_file(self, document_id: str) -> Optional[str]:
@@ -223,35 +265,49 @@ class ParseService:
 
         # Try all possible locations for chunk files
         search_paths = [
-            self.chunks_dir,                                            # Primary path (backend/02-chunked-docs)
-            os.path.join(self.storage_dir, 'backend', '02-chunked-docs'),  # Backend folder path
-            os.path.join(self.storage_dir, '02-chunked-docs'),          # Root directory path
-            os.path.join(self.storage_dir, 'backend/02-chunked-docs'),  # Alt path format
-            os.path.join(os.path.dirname(__file__), '../../../../backend/02-chunked-docs') # Absolute path
+            self.chunks_dir,  # Primary path (backend/02-chunked-docs)
+            os.path.join(
+                self.storage_dir, "backend", "02-chunked-docs"
+            ),  # Backend folder path
+            os.path.join(self.storage_dir, "02-chunked-docs"),  # Root directory path
+            os.path.join(
+                self.storage_dir, "backend/02-chunked-docs"
+            ),  # Alt path format
+            os.path.join(
+                os.path.dirname(__file__), "../../../../backend/02-chunked-docs"
+            ),  # Absolute path
         ]
 
         # Log all search paths
         for i, path in enumerate(search_paths):
-            self.logger.debug(f"Search path {i+1}: {path}")
+            self.logger.debug(f"Search path {i + 1}: {path}")
             if os.path.exists(path):
-                self.logger.debug(f"Path {i+1} exists")
+                self.logger.debug(f"Path {i + 1} exists")
             else:
-                self.logger.debug(f"Path {i+1} does NOT exist")
+                self.logger.debug(f"Path {i + 1} does NOT exist")
 
         # Search through all possible locations
         for i, path in enumerate(search_paths):
-            is_alternative = (i > 0)  # First path is primary, others are alternatives
-            self.logger.debug(f"Searching in {'alternative' if is_alternative else 'primary'} path: {path}")
+            is_alternative = i > 0  # First path is primary, others are alternatives
+            self.logger.debug(
+                f"Searching in {'alternative' if is_alternative else 'primary'} path: {path}"
+            )
 
-            chunk_file = self._search_chunk_file_in_directory(document_id, path, is_alternative=is_alternative)
+            chunk_file = self._search_chunk_file_in_directory(
+                document_id, path, is_alternative=is_alternative
+            )
             if chunk_file:
                 self.logger.info(f"Found chunk file at: {chunk_file}")
                 return chunk_file
 
-        self.logger.error(f"No chunk file found for document ID: {document_id} in any location")
+        self.logger.error(
+            f"No chunk file found for document ID: {document_id} in any location"
+        )
         return None
 
-    def _search_chunk_file_in_directory(self, document_id: str, directory: str, is_alternative: bool = False) -> Optional[str]:
+    def _search_chunk_file_in_directory(
+        self, document_id: str, directory: str, is_alternative: bool = False
+    ) -> Optional[str]:
         """在指定目录中搜索分块文件"""
         if not self._validate_search_directory(directory, is_alternative):
             return None
@@ -284,7 +340,9 @@ class ParseService:
             return newest_chunk_file
 
         if not is_alternative:
-            self.logger.warning(f"Chunk file for document ID: {document_id} not found in {directory} or alternative locations")
+            self.logger.warning(
+                f"Chunk file for document ID: {document_id} not found in {directory} or alternative locations"
+            )
 
         return None
 
@@ -305,9 +363,12 @@ class ParseService:
         self.logger.debug(f"Found {len(files)} files in {directory}")
         return files
 
-    def _find_chunk_by_filename(self, document_id: str, directory: str, files: List[str], newest_time: float) -> Tuple[Optional[str], float]:
+    def _find_chunk_by_filename(
+        self, document_id: str, directory: str, files: List[str], newest_time: float
+    ) -> Tuple[Optional[str], float]:
         """Find chunk file by checking if document_id appears in filename"""
         from app.services.chunk_service import CHUNKS_JSON_SUFFIX
+
         newest_chunk_file = None
 
         for filename in files:
@@ -325,9 +386,12 @@ class ParseService:
 
         return newest_chunk_file, newest_time
 
-    def _find_chunk_by_metadata(self, document_id: str, directory: str, files: List[str], newest_time: float) -> Tuple[Optional[str], float]:
+    def _find_chunk_by_metadata(
+        self, document_id: str, directory: str, files: List[str], newest_time: float
+    ) -> Tuple[Optional[str], float]:
         """Find chunk file by loading each file and checking metadata"""
         from app.services.chunk_service import CHUNKS_JSON_SUFFIX
+
         newest_chunk_file = None
 
         for filename in files:
@@ -341,16 +405,22 @@ class ParseService:
                             if file_mtime > newest_time:
                                 newest_time = file_mtime
                                 newest_chunk_file = filepath
-                                self.logger.debug(f"Found chunk file by metadata: {filepath}")
+                                self.logger.debug(
+                                    f"Found chunk file by metadata: {filepath}"
+                                )
                 except Exception as e:
-                    self.logger.warning(f"Error checking chunk file metadata for {filepath}: {e}")
+                    self.logger.warning(
+                        f"Error checking chunk file metadata for {filepath}: {e}"
+                    )
 
         return newest_chunk_file, newest_time
 
     def _log_found_chunk(self, chunk_file: str, is_alternative: bool) -> None:
         """Log information about found chunk file"""
         location_type = "alternative location" if is_alternative else "primary location"
-        self.logger.debug(f"Found chunk file in {location_type}: {os.path.basename(chunk_file)}")
+        self.logger.debug(
+            f"Found chunk file in {location_type}: {os.path.basename(chunk_file)}"
+        )
 
     def _is_valid_chunk_file(self, filename: str, document_id: str) -> bool:
         """检查文件名是否为有效的分块文件"""
@@ -377,7 +447,7 @@ class ParseService:
 
     def _parse_full_text(self, chunk_data: Dict[str, Any]) -> Dict[str, Any]:
         """全文解析"""
-        self.logger.debug("Parsing full text.") # Added log
+        self.logger.debug("Parsing full text.")  # Added log
         # 从分块数据中提取所有文本
         chunks = chunk_data.get("chunks", [])
 
@@ -403,10 +473,7 @@ class ParseService:
             start_idx = 1 if i == 0 else 0
 
             for j, para in enumerate(paras[start_idx:], start=start_idx):
-                paragraphs.append({
-                    "id": f"p{len(paragraphs)}",
-                    "text": para
-                })
+                paragraphs.append({"id": f"p{len(paragraphs)}", "text": para})
 
         # 构建结构化内容
         return {
@@ -416,9 +483,9 @@ class ParseService:
                     "id": "section_1",
                     "title": "全文",
                     "level": 1,
-                    "paragraphs": paragraphs
+                    "paragraphs": paragraphs,
                 }
-            ]
+            ],
         }
 
     def _parse_by_page(self, chunk_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -436,10 +503,7 @@ class ParseService:
         # 构建章节列表（每页一个章节）
         sections = self._build_page_sections(pages)
 
-        return {
-            "title": title,
-            "sections": sections
-        }
+        return {"title": title, "sections": sections}
 
     def _parse_by_heading(self, chunk_data: Dict[str, Any]) -> Dict[str, Any]:
         """按标题结构解析"""
@@ -459,25 +523,32 @@ class ParseService:
         if not sections:
             sections = [self._create_default_section(sorted_chunks, title)]
 
-        return {
-            "title": title,
-            "sections": sections
-        }
+        return {"title": title, "sections": sections}
 
-    def _parse_text_and_tables(self, chunk_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _parse_text_and_tables(
+        self, chunk_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """
         文本与表格混合解析，基于‘|’或制表符识别表格行
         """
-        self.logger.debug("Parsing text and tables.") # Added log
+        self.logger.debug("Parsing text and tables.")  # Added log
         parsed = []
         for chunk in chunk_data.get("chunks", []):
             text = chunk.get("content", "")
             page = chunk.get("page")
-            if '|' in text or '\t' in text:
+            if "|" in text or "\t" in text:
                 # 简单表格拆分
-                rows = [row.strip().split('|') for row in text.splitlines() if '|' in row]
+                rows = [
+                    row.strip().split("|") for row in text.splitlines() if "|" in row
+                ]
                 df = pd.DataFrame(rows)
-                parsed.append({"type": "table", "page": page, "content": df.to_dict(orient='records')})
+                parsed.append(
+                    {
+                        "type": "table",
+                        "page": page,
+                        "content": df.to_dict(orient="records"),
+                    }
+                )
             else:
                 parsed.append({"type": "text", "page": page, "content": text})
         return parsed
@@ -519,18 +590,20 @@ class ParseService:
         # 示例表格数据 - 合并重复的PDF和DOCX逻辑
         tables = []
 
-        if file_ext in ['.pdf', '.docx']:
+        if file_ext in [".pdf", ".docx"]:
             # PDF和DOCX表格提取逻辑（当前为示例实现）
-            tables.append({
-                "id": "table_1",
-                "section_id": "section_0",
-                "caption": "表1：示例表格",
-                "data": [
-                    ["列1", "列2", "列3"],
-                    ["数据1", "数据2", "数据3"],
-                    ["数据4", "数据5", "数据6"]
-                ]
-            })
+            tables.append(
+                {
+                    "id": "table_1",
+                    "section_id": "section_0",
+                    "caption": "表1：示例表格",
+                    "data": [
+                        ["列1", "列2", "列3"],
+                        ["数据1", "数据2", "数据3"],
+                        ["数据4", "数据5", "数据6"],
+                    ],
+                }
+            )
 
         return tables
 
@@ -543,14 +616,16 @@ class ParseService:
         # 示例图像数据 - 合并重复的PDF和DOCX逻辑
         images = []
 
-        if file_ext in ['.pdf', '.docx']:
+        if file_ext in [".pdf", ".docx"]:
             # PDF和DOCX图像提取逻辑（当前为示例实现）
-            images.append({
-                "id": "image_1",
-                "section_id": "section_0",
-                "caption": "图1：示例图像",
-                "path": "/storage/images/placeholder.png"
-            })
+            images.append(
+                {
+                    "id": "image_1",
+                    "section_id": "section_0",
+                    "caption": "图1：示例图像",
+                    "path": "/storage/images/placeholder.png",
+                }
+            )
 
         return images
 
@@ -564,7 +639,9 @@ class ParseService:
         self.logger.debug(f"Document path: {document_path}")
         return document_path
 
-    def _get_chunk_data(self, document_id: str, page_map: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _get_chunk_data(
+        self, document_id: str, page_map: List[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """获取分块数据"""
         if page_map is not None:
             return self._create_chunk_data_from_page_map(page_map)
@@ -577,7 +654,9 @@ class ParseService:
         # Now load the chunk data
         return self._load_chunk_file(chunk_file, document_id)
 
-    def _create_chunk_data_from_page_map(self, page_map: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _create_chunk_data_from_page_map(
+        self, page_map: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """Create chunk data from provided page map"""
         self.logger.info("Using provided page_map for parsing.")
         return {
@@ -586,8 +665,9 @@ class ParseService:
                     "content": p["text"],
                     "page": p.get("page"),
                     "start_pos": None,
-                    "end_pos": None
-                } for p in page_map
+                    "end_pos": None,
+                }
+                for p in page_map
             ]
         }
 
@@ -600,18 +680,22 @@ class ParseService:
         error_msg = self._build_chunk_error_message(document_id, search_paths)
 
         self.logger.error(error_msg)
-        raise FileNotFoundError(f"请先对文档ID {document_id} 进行分块处理 (Please chunk document ID {document_id} first)")
+        raise FileNotFoundError(
+            f"请先对文档ID {document_id} 进行分块处理 (Please chunk document ID {document_id} first)"
+        )
 
     def _get_chunk_search_paths(self) -> List[str]:
         """Get all the paths where we search for chunk files"""
         return [
             self.chunks_dir,
-            os.path.join(self.storage_dir, 'backend', '02-chunked-docs'),
-            os.path.join(self.storage_dir, '02-chunked-docs'),
-            os.path.join(self.storage_dir, 'backend/02-chunked-docs')
+            os.path.join(self.storage_dir, "backend", "02-chunked-docs"),
+            os.path.join(self.storage_dir, "02-chunked-docs"),
+            os.path.join(self.storage_dir, "backend/02-chunked-docs"),
         ]
 
-    def _build_chunk_error_message(self, document_id: str, search_paths: List[str]) -> str:
+    def _build_chunk_error_message(
+        self, document_id: str, search_paths: List[str]
+    ) -> str:
         """Build detailed error message for missing chunk file"""
         error_msg = f"Chunk file not found for document ID: {document_id}. Please chunk the document first.\n"
         error_msg += "Locations searched:\n"
@@ -642,39 +726,56 @@ class ParseService:
                 return json.load(f)
         except Exception as e:
             self.logger.error(f"Error loading chunk data from {chunk_file}: {str(e)}")
-            raise FileNotFoundError(f"Error loading chunk data for document ID {document_id}: {str(e)}")
+            raise FileNotFoundError(
+                f"Error loading chunk data for document ID {document_id}: {str(e)}"
+            )
 
-    def _create_metadata(self, document_path: str, chunk_data: Dict[str, Any], strategy: str, timestamp: str) -> Dict[str, Any]:
+    def _create_metadata(
+        self,
+        document_path: str,
+        chunk_data: Dict[str, Any],
+        strategy: str,
+        timestamp: str,
+    ) -> Dict[str, Any]:
         """创建元数据"""
         # 提取文档名称（不带扩展名）
         filename = os.path.basename(document_path)
         document_name = os.path.splitext(filename)[0]
 
         # 如果文件名包含时间戳和ID，尝试提取原始名称
-        parts = document_name.split('_')
+        parts = document_name.split("_")
         if len(parts) >= 3:
             # 检查倒数第二个部分是否为时间戳格式
-            if len(parts[-2]) == 15 and parts[-2][8] == '_' and parts[-2][:8].isdigit() and parts[-2][9:].isdigit():
+            if (
+                len(parts[-2]) == 15
+                and parts[-2][8] == "_"
+                and parts[-2][:8].isdigit()
+                and parts[-2][9:].isdigit()
+            ):
                 # 倒数第三个部分以前为原始文件名
-                document_name = '_'.join(parts[:-2])
+                document_name = "_".join(parts[:-2])
 
         metadata = {
             "filename": filename,
             "document_name": document_name,
-            "total_pages": len(set(c.get("page") for c in chunk_data.get("chunks", []))),
+            "total_pages": len(
+                set(c.get("page") for c in chunk_data.get("chunks", []))
+            ),
             "parsing_method": strategy,
-            "timestamp": timestamp
+            "timestamp": timestamp,
         }
         self.logger.debug(f"Generated metadata: {metadata}")
         return metadata
 
-    def _parse_content_by_strategy(self, strategy: str, chunk_data: Dict[str, Any]) -> Any:
+    def _parse_content_by_strategy(
+        self, strategy: str, chunk_data: Dict[str, Any]
+    ) -> Any:
         """根据策略解析内容"""
         strategy_map = {
             "full_text": self._parse_full_text,
             "by_page": self._parse_by_page,
             "by_heading": self._parse_by_heading,
-            "text_and_tables": self._parse_text_and_tables
+            "text_and_tables": self._parse_text_and_tables,
         }
 
         if strategy not in strategy_map:
@@ -683,26 +784,31 @@ class ParseService:
 
         return strategy_map[strategy](chunk_data)
 
-    def _extract_media_content(self, document_path: str, extract_tables: bool, extract_images: bool) -> tuple:
+    def _extract_media_content(
+        self, document_path: str, extract_tables: bool, extract_images: bool
+    ) -> tuple:
         """提取表格和图像内容"""
-        self.logger.info(f"Extract tables: {extract_tables}, Extract images: {extract_images}")
+        self.logger.info(
+            f"Extract tables: {extract_tables}, Extract images: {extract_images}"
+        )
         tables = self._extract_tables(document_path) if extract_tables else []
         images = self._extract_images(document_path) if extract_images else []
         return tables, images
 
-    def _build_parse_result(self, metadata: Dict[str, Any], parsed_content: Any, tables: List, images: List) -> Dict[str, Any]:
+    def _build_parse_result(
+        self, metadata: Dict[str, Any], parsed_content: Any, tables: List, images: List
+    ) -> Dict[str, Any]:
         """构建解析结果"""
-        result = {
-            "metadata": metadata,
-            "content": parsed_content
-        }
+        result = {"metadata": metadata, "content": parsed_content}
         if tables:
             result["tables"] = tables
         if images:
             result["images"] = images
         return result
 
-    def _calculate_content_statistics(self, strategy: str, parsed_content: Any, tables: List, images: List) -> Dict[str, int]:
+    def _calculate_content_statistics(
+        self, strategy: str, parsed_content: Any, tables: List, images: List
+    ) -> Dict[str, int]:
         """计算内容统计数据"""
         total_paragraphs = 0
         total_sections = 0
@@ -716,20 +822,26 @@ class ParseService:
                         total_sections += 1
                         total_paragraphs += len(subsection.get("paragraphs", []))
         elif strategy == "text_and_tables":
-            total_paragraphs = sum(1 for item in parsed_content if item.get("type") == "text")
+            total_paragraphs = sum(
+                1 for item in parsed_content if item.get("type") == "text"
+            )
 
         total_tables = len(tables)
         if strategy == "text_and_tables":
-            total_tables += sum(1 for item in parsed_content if item.get("type") == "table")
+            total_tables += sum(
+                1 for item in parsed_content if item.get("type") == "table"
+            )
 
         return {
             "total_sections": total_sections,
             "total_paragraphs": total_paragraphs,
             "total_tables": total_tables,
-            "total_images": len(images)
+            "total_images": len(images),
         }
 
-    def _save_parse_result(self, document_id: str, timestamp: str, result: Dict[str, Any]) -> str:
+    def _save_parse_result(
+        self, document_id: str, timestamp: str, result: Dict[str, Any]
+    ) -> str:
         """保存解析结果文件"""
         # 从元数据中获取文档名称
         document_name = result.get("metadata", {}).get("document_name", "")
@@ -743,16 +855,26 @@ class ParseService:
         result_path = os.path.join(self.parsed_dir, result_file)
         with open(result_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
-        self.logger.info(f"Successfully parsed document {document_id}. Result saved to: {result_path}")
+        self.logger.info(
+            f"Successfully parsed document {document_id}. Result saved to: {result_path}"
+        )
         return result_file
 
-    def _build_final_response(self, document_id: str, parse_id: str, strategy: str, timestamp: str,
-                             result_file: str, stats: Dict[str, int], parsed_content: Any) -> Dict[str, Any]:
+    def _build_final_response(
+        self,
+        document_id: str,
+        parse_id: str,
+        strategy: str,
+        timestamp: str,
+        result_file: str,
+        stats: Dict[str, int],
+        parsed_content: Any,
+    ) -> Dict[str, Any]:
         """构建最终响应"""
         # 从文件名中提取文档名称（如果存在）
         document_name = ""
         if "_" in result_file:
-            parts = result_file.split('_')
+            parts = result_file.split("_")
             if len(parts) > 2:  # 确保至少有文档名_ID_时间戳格式
                 # 文档名在倒数第三个部分之前
                 document_id_index = -3
@@ -777,7 +899,7 @@ class ParseService:
             "total_tables": stats["total_tables"],
             "total_images": stats["total_images"],
             "message": f"文档解析成功，已存储为 {result_file}",
-            "parsed_content": self._get_sample_content(parsed_content, strategy)
+            "parsed_content": self._get_sample_content(parsed_content, strategy),
         }
 
     def _extract_document_title(self, sorted_chunks):
@@ -807,13 +929,16 @@ class ParseService:
 
                 if self._is_heading_level1(line):
                     current_section, current_subsection = self._handle_level1_heading(
-                        line, sections, current_section)
+                        line, sections, current_section
+                    )
                 elif current_section and self._is_heading_level2(line):
                     current_subsection = self._handle_level2_heading(
-                        line, current_section, len(sections))
+                        line, current_section, len(sections)
+                    )
                 elif current_section:
                     self._add_paragraph_to_section(
-                        line, current_section, current_subsection, len(sections))
+                        line, current_section, current_subsection, len(sections)
+                    )
 
         # 添加最后一个章节
         if current_section:
@@ -833,7 +958,7 @@ class ParseService:
             "title": line,
             "level": 1,
             "paragraphs": [],
-            "subsections": []
+            "subsections": [],
         }
         return new_section, None
 
@@ -843,26 +968,29 @@ class ParseService:
             "id": f"section_{section_count}_{len(current_section['subsections'])}",
             "title": line,
             "level": 2,
-            "paragraphs": []
+            "paragraphs": [],
         }
         current_section["subsections"].append(subsection)
         return subsection
 
-    def _add_paragraph_to_section(self, line, current_section, current_subsection, section_count):
+    def _add_paragraph_to_section(
+        self, line, current_section, current_subsection, section_count
+    ):
         """添加段落到章节"""
         if current_subsection:
-            subsection_index = len(current_section['subsections']) - 1
-            paragraph_count = len(current_subsection['paragraphs'])
-            current_subsection["paragraphs"].append({
-                "id": f"p{section_count}_{subsection_index}_{paragraph_count}",
-                "text": line
-            })
+            subsection_index = len(current_section["subsections"]) - 1
+            paragraph_count = len(current_subsection["paragraphs"])
+            current_subsection["paragraphs"].append(
+                {
+                    "id": f"p{section_count}_{subsection_index}_{paragraph_count}",
+                    "text": line,
+                }
+            )
         else:
-            paragraph_count = len(current_section['paragraphs'])
-            current_section["paragraphs"].append({
-                "id": f"p{section_count}_{paragraph_count}",
-                "text": line
-            })
+            paragraph_count = len(current_section["paragraphs"])
+            current_section["paragraphs"].append(
+                {"id": f"p{section_count}_{paragraph_count}", "text": line}
+            )
 
     def _create_default_section(self, sorted_chunks, title):
         """创建默认章节"""
@@ -875,17 +1003,14 @@ class ParseService:
             start_idx = 1 if i == 0 else 0
 
             for para in paras[start_idx:]:
-                paragraphs.append({
-                    "id": f"p{len(paragraphs)}",
-                    "text": para
-                })
+                paragraphs.append({"id": f"p{len(paragraphs)}", "text": para})
 
         return {
             "id": "section_0",
             "title": "文档内容",
             "level": 1,
             "paragraphs": paragraphs,
-            "subsections": []
+            "subsections": [],
         }
 
     def _group_chunks_by_page(self, chunks):
@@ -915,12 +1040,14 @@ class ParseService:
             page_chunks = sorted(pages[page_num], key=lambda x: x.get("start_pos", 0))
             paragraphs = self._build_page_paragraphs(page_chunks, page_num)
 
-            sections.append({
-                "id": f"section_{page_num}",
-                "title": f"第 {page_num} 页",
-                "level": 1,
-                "paragraphs": paragraphs
-            })
+            sections.append(
+                {
+                    "id": f"section_{page_num}",
+                    "title": f"第 {page_num} 页",
+                    "level": 1,
+                    "paragraphs": paragraphs,
+                }
+            )
         return sections
 
     def _build_page_paragraphs(self, page_chunks, page_num):
@@ -934,8 +1061,7 @@ class ParseService:
             start_idx = 1 if page_num == 1 and i == 0 else 0
 
             for para in paras[start_idx:]:
-                paragraphs.append({
-                    "id": f"p{page_num}_{len(paragraphs)}",
-                    "text": para
-                })
+                paragraphs.append(
+                    {"id": f"p{page_num}_{len(paragraphs)}", "text": para}
+                )
         return paragraphs

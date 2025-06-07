@@ -12,6 +12,7 @@ from app.core.logger import get_logger_with_env_level
 # Initialize logger using the environment-based configuration
 logger = get_logger_with_env_level(__name__)
 
+
 class LoadService:
     """文档加载服务，支持PDF、DOCX、TXT、Markdown格式"""
 
@@ -22,7 +23,9 @@ class LoadService:
         self.storage_dir = str(abs_storage)
 
         # Store relative path but use absolute when needed
-        self.documents_dir = "backend/01-loaded_docs" if documents_dir is None else documents_dir
+        self.documents_dir = (
+            "backend/01-loaded_docs" if documents_dir is None else documents_dir
+        )
         # Also create a full absolute path to avoid path resolution issues
         self.abs_documents_dir = str(project_root / self.documents_dir)
         os.makedirs(self.storage_dir, exist_ok=True)
@@ -30,11 +33,15 @@ class LoadService:
 
         self.logger = logging.getLogger(__name__)
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(name)s: %(message)s'))
+        handler.setFormatter(
+            logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
+        )
         if not self.logger.hasHandlers():
             self.logger.addHandler(handler)
         self.logger.debug(f"[LoadService] storage_dir set to: {self.storage_dir}")
-        self.logger.debug(f"[LoadService] documents_dir set to: {self.documents_dir} (absolute: {self.abs_documents_dir})")
+        self.logger.debug(
+            f"[LoadService] documents_dir set to: {self.documents_dir} (absolute: {self.abs_documents_dir})"
+        )
         self.total_pages = 0
         self.current_page_map = []
 
@@ -43,7 +50,7 @@ class LoadService:
         file: UploadFile,
         description: str = None,
         method: str = "pymupdf",
-        strategy: str = None
+        strategy: str = None,
     ):
         """
         加载文档并提取基本信息，文件保存为“原始文件名_日期时间_ID.后缀”，便于区分和溯源
@@ -51,7 +58,9 @@ class LoadService:
         # 检查文件类型
         orig_filename = os.path.splitext(file.filename)[0]
         file_ext = os.path.splitext(file.filename)[1].lower()
-        self.logger.debug(f"[load_document] Received file: {file.filename}, ext: {file_ext}")
+        self.logger.debug(
+            f"[load_document] Received file: {file.filename}, ext: {file_ext}"
+        )
 
         # 生成唯一文件名
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -66,7 +75,9 @@ class LoadService:
             content = await file.read()
             buffer.write(content)
             await file.seek(0)  # 重置文件指针以便后续处理
-        self.logger.debug(f"[load_document] Saved file to: {file_path}, size: {os.path.getsize(file_path)} bytes")
+        self.logger.debug(
+            f"[load_document] Saved file to: {file_path}, size: {os.path.getsize(file_path)} bytes"
+        )
 
         # 提取文档信息
         doc_info = {
@@ -79,90 +90,91 @@ class LoadService:
             "upload_time": timestamp,
             "file_type": file_ext[1:],  # 去掉点号
             "metadata": {},
-            "preview": None
+            "preview": None,
         }
 
         # 根据文件类型提取或加载信息
-        if file_ext == '.pdf':
-            self.logger.debug(f"[load_document] Loading PDF: {file_path} with method={method}")
+        if file_ext == ".pdf":
+            self.logger.debug(
+                f"[load_document] Loading PDF: {file_path} with method={method}"
+            )
             try:
                 # use multi-library PDF loader
-                text = self.load_pdf(
-                    file_path,
-                    method=method,
-                    strategy=strategy
-                )
+                text = self.load_pdf(file_path, method=method, strategy=strategy)
             except Exception as e:
                 self.logger.error(f"Failed to load PDF {file.filename}: {str(e)}")
                 raise ValueError(f"Failed to process PDF: {str(e)}")
-            self.logger.debug(f"[load_document] PDF loaded, page_count={self.total_pages}")
+            self.logger.debug(
+                f"[load_document] PDF loaded, page_count={self.total_pages}"
+            )
             # Limit preview to first 50 words
             words = text.split()
             preview_text = " ".join(words[:50])
             if len(words) > 50:
                 preview_text += "..."
 
-            doc_info.update({
-                "metadata": {},
-                "preview": preview_text,
-                "page_map": self.current_page_map,
-                "page_count": self.total_pages,
-                "text": text
-            })
-        elif file_ext == '.docx':
+            doc_info.update(
+                {
+                    "metadata": {},
+                    "preview": preview_text,
+                    "page_map": self.current_page_map,
+                    "page_count": self.total_pages,
+                    "text": text,
+                }
+            )
+        elif file_ext == ".docx":
             self.logger.debug(f"[load_document] Loading DOCX: {file_path}")
             docx_info = self._extract_docx_info(file_path)
             doc_info["metadata"] = docx_info["metadata"]
             doc_info["preview"] = docx_info["preview"]
-        elif file_ext in ['.txt', '.md']:
+        elif file_ext in [".txt", ".md"]:
             self.logger.debug(f"[load_document] Loading TXT/MD: {file_path}")
             text_info = self._extract_text_info(file_path)
             doc_info["preview"] = text_info["preview"]
-        elif file_ext == '.csv':
+        elif file_ext == ".csv":
             self.logger.debug(f"[load_document] Loading CSV: {file_path}")
             try:
                 import csv
-                with open(file_path, newline='', encoding='utf-8') as csvfile:
+
+                with open(file_path, newline="", encoding="utf-8") as csvfile:
                     reader = csv.reader(csvfile)
                     rows = list(reader)
-                    preview_text = '\n'.join([', '.join(row) for row in rows[:5]])
+                    preview_text = "\n".join([", ".join(row) for row in rows[:5]])
             except Exception as e:
                 self.logger.error(f"Failed to load CSV {file.filename}: {str(e)}")
                 raise ValueError(f"Failed to process CSV: {str(e)}")
 
-            doc_info.update({
-                "metadata": {},
-                "preview": preview_text,
-                "row_count": len(rows),
-                "column_count": len(rows[0]) if rows else 0
-            })
+            doc_info.update(
+                {
+                    "metadata": {},
+                    "preview": preview_text,
+                    "row_count": len(rows),
+                    "column_count": len(rows[0]) if rows else 0,
+                }
+            )
 
-        self.logger.debug(f"[load_document] Returning doc_info: {doc_info['filename']} (ID: {doc_info['id']})")
+        self.logger.debug(
+            f"[load_document] Returning doc_info: {doc_info['filename']} (ID: {doc_info['id']})"
+        )
         self.save_document_json(doc_info)  # 自动保存为JSON
         return doc_info
 
     def load_pdf(
-        self,
-        file_path: str,
-        method: str = "pymupdf",
-        strategy: str = None
+        self, file_path: str, method: str = "pymupdf", strategy: str = None
     ) -> str:
         """
         加载PDF文档，支持多种库和策略，记录 page_map 和 total_pages
         """
         try:
-            if method == 'pymupdf':
+            if method == "pymupdf":
                 return self._load_with_pymupdf(file_path)
-            elif method == 'pypdf':
+            elif method == "pypdf":
                 return self._load_with_pypdf(file_path)
-            elif method == 'pdfplumber':
+            elif method == "pdfplumber":
                 return self._load_with_pdfplumber(file_path)
-            elif method == 'unstructured':
+            elif method == "unstructured":
                 # Only pass the strategy parameter that's actually used
-                return self._load_with_unstructured(
-                    file_path,
-                    strategy=strategy
-                )
+                return self._load_with_unstructured(file_path, strategy=strategy)
             else:
                 raise ValueError(f"Unsupported loading method: {method}")
         except Exception as e:
@@ -191,7 +203,7 @@ class LoadService:
                 "creator": doc.metadata.get("creator", ""),
                 "producer": doc.metadata.get("producer", ""),
                 "creation_date": doc.metadata.get("creationDate", ""),
-                "modification_date": doc.metadata.get("modDate", "")
+                "modification_date": doc.metadata.get("modDate", ""),
             }
 
             # 提取第一页文本作为预览
@@ -205,13 +217,13 @@ class LoadService:
             return {
                 "metadata": metadata,
                 "preview": preview,
-                "page_count": doc.page_count
+                "page_count": doc.page_count,
             }
         except Exception as e:
             return {
                 "metadata": {"error": str(e)},
                 "preview": "无法提取PDF预览",
-                "page_count": 0
+                "page_count": 0,
             }
 
     def _extract_docx_info(self, file_path):
@@ -226,9 +238,13 @@ class LoadService:
                 "author": core_properties.author or "",
                 "subject": core_properties.subject or "",
                 "keywords": core_properties.keywords or "",
-                "created": str(core_properties.created) if core_properties.created else "",
-                "modified": str(core_properties.modified) if core_properties.modified else "",
-                "last_modified_by": core_properties.last_modified_by or ""
+                "created": str(core_properties.created)
+                if core_properties.created
+                else "",
+                "modified": str(core_properties.modified)
+                if core_properties.modified
+                else "",
+                "last_modified_by": core_properties.last_modified_by or "",
             }
 
             # 提取文本作为预览
@@ -236,32 +252,22 @@ class LoadService:
             if len(preview) > 500:
                 preview = preview[:500] + "..."
 
-            return {
-                "metadata": metadata,
-                "preview": preview
-            }
+            return {"metadata": metadata, "preview": preview}
         except Exception as e:
-            return {
-                "metadata": {"error": str(e)},
-                "preview": "无法提取DOCX预览"
-            }
+            return {"metadata": {"error": str(e)}, "preview": "无法提取DOCX预览"}
 
     def _extract_text_info(self, file_path):
         """提取TXT/MD文档信息"""
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read(1000)  # 读取前1000个字符
                 preview = text
                 if len(text) == 1000:
                     preview = text + "..."
 
-            return {
-                "preview": preview
-            }
+            return {"preview": preview}
         except Exception as e:
-            return {
-                "preview": f"无法提取文本预览: {str(e)}"
-            }
+            return {"preview": f"无法提取文本预览: {str(e)}"}
 
     def _extract_file_info(self, filename):
         """从文件名中提取文件信息"""
@@ -269,23 +275,27 @@ class LoadService:
         if not os.path.isfile(file_path):
             return None
 
-        file_ext = os.path.splitext(filename)[1][1:] if os.path.splitext(filename)[1] else ""
+        file_ext = (
+            os.path.splitext(filename)[1][1:] if os.path.splitext(filename)[1] else ""
+        )
         file_base = os.path.splitext(filename)[0]
         return file_path, file_ext, file_base
 
     def _extract_document_id_and_name(self, filename, file_base):
         """从文件基本名称中提取文档ID和显示名称"""
-        parts = file_base.split('_')
+        parts = file_base.split("_")
         # Extract unique ID (last part after underscore)
         unique_id = parts[-1] if len(parts) >= 3 else file_base
         # Use original filename for display if available
-        orig_filename = '_'.join(parts[:-2]) if len(parts) >= 3 else filename
+        orig_filename = "_".join(parts[:-2]) if len(parts) >= 3 else filename
         return unique_id, orig_filename
 
     def _format_upload_time(self, stat, filename):
         """格式化上传时间"""
         try:
-            return datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            return datetime.datetime.fromtimestamp(stat.st_mtime).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
         except (ValueError, OverflowError, OSError) as e:
             self.logger.warning(f"Error formatting timestamp for {filename}: {str(e)}")
             return "Unknown"
@@ -299,7 +309,9 @@ class LoadService:
         file_path, file_ext, file_base = file_info
         stat = os.stat(file_path)
 
-        unique_id, orig_filename = self._extract_document_id_and_name(filename, file_base)
+        unique_id, orig_filename = self._extract_document_id_and_name(
+            filename, file_base
+        )
         upload_time = self._format_upload_time(stat, filename)
 
         document = {
@@ -308,7 +320,7 @@ class LoadService:
             "path": file_path,
             "size": stat.st_size,
             "upload_time": upload_time,
-            "file_type": file_ext
+            "file_type": file_ext,
         }
 
         self.logger.debug(f"Added document: id={unique_id}, name={orig_filename}")
@@ -317,7 +329,9 @@ class LoadService:
     def get_document_list(self):
         """获取已上传文档列表（真实目录，无任何硬编码示例数据）"""
         documents = []
-        self.logger.debug(f"Reading document list from storage directory: {self.storage_dir}")
+        self.logger.debug(
+            f"Reading document list from storage directory: {self.storage_dir}"
+        )
 
         if not os.path.exists(self.storage_dir):
             self.logger.warning(f"Storage directory does not exist: {self.storage_dir}")
@@ -339,7 +353,9 @@ class LoadService:
             # No longer need to check for duplicate backend/backend folder
             # since it has been cleaned up in the cleanup-backend-duplicate.ps1 script
 
-            self.logger.debug(f"Returning {len(documents)} documents from storage directory")
+            self.logger.debug(
+                f"Returning {len(documents)} documents from storage directory"
+            )
             return documents
 
         except Exception as e:
@@ -350,7 +366,9 @@ class LoadService:
         """获取指定文档的详细信息"""
         filename, file_path, file_ext = self._find_document_file(document_id)
         if filename and file_path:  # Check if both filename and file_path are valid
-            doc_info = self._create_basic_doc_info(document_id, filename, file_path, file_ext)
+            doc_info = self._create_basic_doc_info(
+                document_id, filename, file_path, file_ext
+            )
             self._enrich_doc_info_by_type(doc_info, file_path, file_ext)
             return doc_info
         return None
@@ -398,16 +416,16 @@ class LoadService:
 
     def _enrich_doc_info_by_type(self, doc_info, file_path, file_ext):
         """根据文件类型丰富文档信息"""
-        if file_ext == '.pdf':
+        if file_ext == ".pdf":
             pdf_info = self._extract_pdf_info(file_path)
             doc_info["metadata"] = pdf_info["metadata"]
             doc_info["preview"] = pdf_info["preview"]
             doc_info["page_count"] = pdf_info["page_count"]
-        elif file_ext == '.docx':
+        elif file_ext == ".docx":
             docx_info = self._extract_docx_info(file_path)
             doc_info["metadata"] = docx_info["metadata"]
             doc_info["preview"] = docx_info["preview"]
-        elif file_ext in ['.txt', '.md']:
+        elif file_ext in [".txt", ".md"]:
             text_info = self._extract_text_info(file_path)
             doc_info["preview"] = text_info["preview"]
 
@@ -416,7 +434,9 @@ class LoadService:
         self.logger.info(f"Attempting to delete document with ID: {document_id}")
         filename, file_path, file_ext = self._find_document_file(document_id)
 
-        self.logger.debug(f"Document search results: filename={filename}, path={file_path}, ext={file_ext}")
+        self.logger.debug(
+            f"Document search results: filename={filename}, path={file_path}, ext={file_ext}"
+        )
 
         if file_path:
             try:
@@ -429,7 +449,9 @@ class LoadService:
 
         # List all files in directory for debugging
         if os.path.exists(self.storage_dir):
-            self.logger.debug(f"Files in storage directory: {os.listdir(self.storage_dir)}")
+            self.logger.debug(
+                f"Files in storage directory: {os.listdir(self.storage_dir)}"
+            )
 
         self.logger.warning(f"Could not find document with ID {document_id} to delete")
         return False
@@ -489,8 +511,11 @@ class LoadService:
         """
         # lazy import pdfplumber to avoid import errors at startup
         import importlib.util
+
         if importlib.util.find_spec("pdfplumber") is None:
-            self.logger.error("pdfplumber not installed. Please run 'pip install pdfplumber'")
+            self.logger.error(
+                "pdfplumber not installed. Please run 'pip install pdfplumber'"
+            )
             raise ImportError("pdfplumber module not found")
 
         import pdfplumber  # type: ignore # Pylance doesn't see this import
@@ -502,10 +527,9 @@ class LoadService:
                 for page_num, page in enumerate(pdf.pages, 1):
                     page_text = page.extract_text()
                     if page_text and page_text.strip():
-                        text_blocks.append({
-                            "text": page_text.strip(),
-                            "page": page_num
-                        })
+                        text_blocks.append(
+                            {"text": page_text.strip(), "page": page_num}
+                        )
             self.current_page_map = text_blocks
             return "\n".join(block["text"] for block in text_blocks)
         except Exception as e:
@@ -518,6 +542,7 @@ class LoadService:
         返回提取的文本内容，并更新 self.total_pages 和 self.current_page_map。
         """
         import fitz
+
         text_blocks = []
         try:
             with fitz.open(file_path) as doc:
@@ -525,10 +550,7 @@ class LoadService:
                 for page_num, page in enumerate(doc, 1):
                     text = page.get_text("text")
                     if text.strip():
-                        text_blocks.append({
-                            "text": text.strip(),
-                            "page": page_num
-                        })
+                        text_blocks.append({"text": text.strip(), "page": page_num})
             self.current_page_map = text_blocks
             return "\n".join(block["text"] for block in text_blocks)
         except Exception as e:
@@ -547,10 +569,7 @@ class LoadService:
             for page_num, page in enumerate(pdf.pages, 1):
                 text = page.extract_text()
                 if text and text.strip():
-                    text_blocks.append({
-                        "text": text.strip(),
-                        "page": page_num
-                    })
+                    text_blocks.append({"text": text.strip(), "page": page_num})
             self.current_page_map = text_blocks
             return "\n".join(block["text"] for block in text_blocks)
         except Exception as e:
@@ -574,15 +593,32 @@ class LoadService:
         os.makedirs(documents_dir, exist_ok=True)
 
         # 生成文件名：原始名+时间戳+id.json
-        base_name = os.path.splitext(doc_info.get("saved_as") or doc_info.get("filename"))[0]
+        base_name = os.path.splitext(
+            doc_info.get("saved_as") or doc_info.get("filename")
+        )[0]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = doc_info.get("id", "")
         json_filename = f"{base_name}_{timestamp}_{unique_id}.json"
         json_path = os.path.join(documents_dir, json_filename)
         # 只保留主要字段
         save_data = {
-            k: v for k, v in doc_info.items() if k in [
-                "id", "filename", "saved_as", "path", "size", "description", "upload_time", "file_type", "metadata", "preview", "page_map", "page_count", "text"
+            k: v
+            for k, v in doc_info.items()
+            if k
+            in [
+                "id",
+                "filename",
+                "saved_as",
+                "path",
+                "size",
+                "description",
+                "upload_time",
+                "file_type",
+                "metadata",
+                "preview",
+                "page_map",
+                "page_count",
+                "text",
             ]
         }
         with open(json_path, "w", encoding="utf-8") as f:

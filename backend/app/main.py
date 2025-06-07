@@ -6,21 +6,31 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
-    documents, chunks, parse, embeddings, index, search, generate,
-    config as config_api, debug, debug_storage, mcp, health
+    documents,
+    chunks,
+    parse,
+    embeddings,
+    index,
+    search,
+    generate,
+    config as config_api,
+    debug,
+    debug_storage,
+    mcp,
+    health,
 )
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Set up logging based on environment variable
-log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
+log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
 log_level_map = {
-    'DEBUG': logging.DEBUG,
-    'INFO': logging.INFO,
-    'WARNING': logging.WARNING,
-    'ERROR': logging.ERROR,
-    'CRITICAL': logging.CRITICAL
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
 }
 log_level = log_level_map.get(log_level_str, logging.INFO)
 
@@ -28,28 +38,32 @@ logging.basicConfig(level=log_level)
 logging.debug(f"Logging level set to: {log_level_str}")
 
 # MCP server configuration
-ENABLE_MCP_SERVER = os.getenv('ENABLE_MCP_SERVER', 'true').lower() == 'true'
-MCP_SERVER_PORT = int(os.getenv('MCP_SERVER_PORT', '3005'))
-MCP_SERVER_HOST = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
-logging.debug(f"MCP Server settings: enabled={ENABLE_MCP_SERVER}, port={MCP_SERVER_PORT}, host={MCP_SERVER_HOST}")
+ENABLE_MCP_SERVER = os.getenv("ENABLE_MCP_SERVER", "true").lower() == "true"
+MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "3005"))
+MCP_SERVER_HOST = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
+logging.debug(
+    f"MCP Server settings: enabled={ENABLE_MCP_SERVER}, port={MCP_SERVER_PORT}, host={MCP_SERVER_HOST}"
+)
+
 
 # 创建一个将标准输出重定向到日志系统的处理程序
 class PrintToLogger:
     def __init__(self, logger, level):
         self.logger = logger
         self.level = level
-        self.linebuf = ''
+        self.linebuf = ""
 
     def write(self, buf):
         for line in buf.rstrip().splitlines():
-            if line.strip() and '[ChunkService' in line:
+            if line.strip() and "[ChunkService" in line:
                 self.logger.log(self.level, line.rstrip())
 
     def flush(self):
         pass
 
+
 # 创建一个专门用于捕获 ChunkService 输出的日志器
-chunk_logger = logging.getLogger('ChunkService')
+chunk_logger = logging.getLogger("ChunkService")
 chunk_logger.setLevel(logging.WARNING)  # 只显示警告和错误
 
 # 重定向标准输出，只捕获 ChunkService 相关的打印内容
@@ -65,7 +79,10 @@ logging.getLogger("app.services.chunk_service").setLevel(logging.WARNING)
 logging.getLogger("app.services.embed_service").setLevel(logging.WARNING)
 logging.getLogger("core.config").setLevel(logging.WARNING)
 logging.getLogger("ChunkService").setLevel(logging.WARNING)
-logging.getLogger("SearchService").setLevel(logging.WARNING)  # Changed from INFO to WARNING to hide search results
+logging.getLogger("SearchService").setLevel(
+    logging.WARNING
+)  # Changed from INFO to WARNING to hide search results
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -73,15 +90,19 @@ async def lifespan(app: FastAPI):
     if ENABLE_MCP_SERVER:
         try:
             from app.mcp import start_mcp_server
+
             logging.info("Starting MCP server...")
             success = start_mcp_server(port=MCP_SERVER_PORT, host=MCP_SERVER_HOST)
             if success:
-                logging.info(f"MCP server started on {MCP_SERVER_HOST}:{MCP_SERVER_PORT}")
+                logging.info(
+                    f"MCP server started on {MCP_SERVER_HOST}:{MCP_SERVER_PORT}"
+                )
             else:
                 logging.error("Failed to start MCP server")
         except Exception as e:
             logging.error(f"Error starting MCP server: {e}")
             import traceback
+
             logging.error(traceback.format_exc())
 
     yield
@@ -90,6 +111,7 @@ async def lifespan(app: FastAPI):
     if ENABLE_MCP_SERVER:
         try:
             from app.mcp import stop_mcp_server
+
             logging.info("Stopping MCP server...")
             success = stop_mcp_server()
             if success:
@@ -99,14 +121,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logging.error(f"Error stopping MCP server: {e}")
             import traceback
+
             logging.error(traceback.format_exc())
+
 
 # 创建FastAPI应用
 app = FastAPI(
     title="VerseMind-RAG API",
     description="Where Poetry Meets AI - 检索增强生成系统API",
     version="0.2.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # 定义所有必要的目录路径 - 保持唯一性
@@ -120,7 +144,7 @@ required_dirs = [
     "backend/04-embedded-docs",
     # 索引与结果存储
     "backend/storage/indices",
-    "backend/storage/results"
+    "backend/storage/results",
 ]
 
 # 创建所有必要的目录
@@ -133,11 +157,21 @@ for dir_path in required_dirs:
 # Suppress unnecessary logs unless there is an error
 if logging.getLogger().isEnabledFor(logging.DEBUG):
     logging.debug("[core.config]: Initialized settings. Effective paths:")
-    logging.debug("  EMBEDDINGS_DIR='%s'", os.getenv('EMBEDDINGS_DIR', 'backend/04-embedded-docs'))
-    logging.debug("  INDICES_DIR='%s'", os.getenv('INDICES_DIR', 'backend/storage/indices'))
-    logging.debug("  DOCUMENTS_DIR='%s'", os.getenv('DOCUMENTS_DIR', 'backend/01-loaded_docs'))
-    logging.debug("  CHUNKS_DIR='%s'", os.getenv('CHUNKS_DIR', 'backend/02-chunked-docs'))
-    logging.debug("  PARSED_DIR='%s'", os.getenv('PARSED_DIR', 'backend/03-parsed-docs'))
+    logging.debug(
+        "  EMBEDDINGS_DIR='%s'", os.getenv("EMBEDDINGS_DIR", "backend/04-embedded-docs")
+    )
+    logging.debug(
+        "  INDICES_DIR='%s'", os.getenv("INDICES_DIR", "backend/storage/indices")
+    )
+    logging.debug(
+        "  DOCUMENTS_DIR='%s'", os.getenv("DOCUMENTS_DIR", "backend/01-loaded_docs")
+    )
+    logging.debug(
+        "  CHUNKS_DIR='%s'", os.getenv("CHUNKS_DIR", "backend/02-chunked-docs")
+    )
+    logging.debug(
+        "  PARSED_DIR='%s'", os.getenv("PARSED_DIR", "backend/03-parsed-docs")
+    )
 
 # 配置CORS
 app.add_middleware(
@@ -171,6 +205,7 @@ app.include_router(config_api.router, prefix="/api")
 app.include_router(health.router, prefix="/api/health")
 # Note: index, embeddings, and search routers are already included in api_router above
 
+
 # 根路由
 @app.get("/")
 async def root():
@@ -178,5 +213,5 @@ async def root():
         "message": "欢迎使用VerseMind-RAG API",
         "version": "0.1.0",
         "status": "运行中",
-        "docs_url": "/docs"
+        "docs_url": "/docs",
     }

@@ -17,6 +17,7 @@ import logging
 # Set up logging
 logger = logging.getLogger(__name__)
 
+
 class ToolManager:
     """Tool manager for the SimpleMCPServer."""
 
@@ -26,35 +27,34 @@ class ToolManager:
     def list_tools(self):
         """List all registered tools."""
         return [
-            type('Tool', (), {'name': name, 'description': f'Tool: {name}'})()
+            type("Tool", (), {"name": name, "description": f"Tool: {name}"})()
             for name in self.server.tools.keys()
         ]
+
 
 class SimpleMCPServer:
     """A simple MCP-like server implementation without external dependencies."""
 
     def __init__(self):
         self.tools = {}
-        self.settings = type('Settings', (), {
-            'host': '0.0.0.0',
-            'port': 3005
-        })()
+        self.settings = type("Settings", (), {"host": "0.0.0.0", "port": 3005})()
         self._tool_manager = ToolManager(self)
 
     def register_tool(self, name: str, func: callable, description: str = ""):
         """Register a tool with the server."""
-        self.tools[name] = {
-            'func': func,
-            'description': description
-        }
+        self.tools[name] = {"func": func, "description": description}
 
-    def run(self, transport='streamable-http'):
+    def run(self, transport="streamable-http"):
         """Mock run method that doesn't actually start a server."""
-        logger.info(f"Mock MCP server would run on {self.settings.host}:{self.settings.port} with transport {transport}")
+        logger.info(
+            f"Mock MCP server would run on {self.settings.host}:{self.settings.port} with transport {transport}"
+        )
         logger.info(f"Registered tools: {list(self.tools.keys())}")
+
 
 def mcp_tool_with_error_handling(func):
     """Decorator that wraps MCP tool methods to handle errors."""
+
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
@@ -62,11 +62,10 @@ def mcp_tool_with_error_handling(func):
             error_msg = f"Error in {func.__name__}: {str(e)}"
             logger.error(error_msg)
             logger.error(traceback.format_exc())
-            return {
-                "success": False,
-                "error": error_msg
-            }
+            return {"success": False, "error": error_msg}
+
     return wrapper
+
 
 class VersemindMCPService:
     """Mock VerseMind MCP Service that provides the same interface without external dependencies."""
@@ -81,7 +80,9 @@ class VersemindMCPService:
         self._load_from_globals()
 
         # Path to document storage
-        self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../storage'))
+        self.storage_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../../../storage")
+        )
         self.documents_dir = os.path.join(self.storage_dir, "documents")
         self.indices_dir = os.path.join(self.storage_dir, "indices")
 
@@ -89,7 +90,7 @@ class VersemindMCPService:
         self.models = {
             "ollama": ["llama3:8b", "codellama:7b", "mistral:7b"],
             "openai": ["gpt-3.5-turbo", "gpt-4o"],
-            "deepseek": ["deepseek-chat", "deepseek-reasoner"]
+            "deepseek": ["deepseek-chat", "deepseek-reasoner"],
         }
 
         self._register_tools()
@@ -98,16 +99,18 @@ class VersemindMCPService:
     def _load_from_globals(self):
         """Load title and reference from globals if available."""
         try:
-            main_module = sys.modules.get('__main__')
+            main_module = sys.modules.get("__main__")
             if main_module:
-                if hasattr(main_module, 'title'):
+                if hasattr(main_module, "title"):
                     self.title = main_module.title
-                if hasattr(main_module, 'reference'):
+                if hasattr(main_module, "reference"):
                     self.reference = main_module.reference
 
             # Check if we loaded anything
             if self.title or self.reference:
-                logger.info(f"Loaded VerseMind data: title='{self.title}' and reference data of length {len(self.reference) if self.reference else 0}")
+                logger.info(
+                    f"Loaded VerseMind data: title='{self.title}' and reference data of length {len(self.reference) if self.reference else 0}"
+                )
             else:
                 logger.debug("No VerseMind data loaded from globals")
         except Exception as e:
@@ -116,11 +119,31 @@ class VersemindMCPService:
     def _register_tools(self):
         """Register all available tools with the MCP server."""
         tools = [
-            ("get_versemind_data", self.get_versemind_data, "Get current VerseMind data"),
-            ("list_knowledge_bases", self.list_knowledge_bases, "List available knowledge bases"),
-            ("get_knowledge_base_info", self.get_knowledge_base_info, "Get knowledge base information"),
-            ("search_knowledge_base", self.search_knowledge_base, "Search in knowledge base"),
-            ("list_available_models", self.list_available_models, "List available models"),
+            (
+                "get_versemind_data",
+                self.get_versemind_data,
+                "Get current VerseMind data",
+            ),
+            (
+                "list_knowledge_bases",
+                self.list_knowledge_bases,
+                "List available knowledge bases",
+            ),
+            (
+                "get_knowledge_base_info",
+                self.get_knowledge_base_info,
+                "Get knowledge base information",
+            ),
+            (
+                "search_knowledge_base",
+                self.search_knowledge_base,
+                "Search in knowledge base",
+            ),
+            (
+                "list_available_models",
+                self.list_available_models,
+                "List available models",
+            ),
         ]
 
         for name, func, description in tools:
@@ -134,14 +157,14 @@ class VersemindMCPService:
             # List knowledge bases from document directory
             if os.path.exists(self.documents_dir):
                 for filename in os.listdir(self.documents_dir):
-                    if filename.endswith(('.pdf', '.txt', '.md', '.docx')):
+                    if filename.endswith((".pdf", ".txt", ".md", ".docx")):
                         kb_path = os.path.join(self.documents_dir, filename)
                         kb_info = {
-                            "id": filename.split('.')[0],
+                            "id": filename.split(".")[0],
                             "name": filename,
-                            "file_type": filename.split('.')[-1],
+                            "file_type": filename.split(".")[-1],
                             "size_bytes": os.path.getsize(kb_path),
-                            "last_modified": os.path.getmtime(kb_path)
+                            "last_modified": os.path.getmtime(kb_path),
                         }
                         knowledge_bases.append(kb_info)
         except Exception as e:
@@ -156,7 +179,7 @@ class VersemindMCPService:
             "success": True,
             "title": self.title,
             "reference": self.reference,
-            "has_data": bool(self.title or self.reference)
+            "has_data": bool(self.title or self.reference),
         }
 
     @mcp_tool_with_error_handling
@@ -166,7 +189,7 @@ class VersemindMCPService:
         return {
             "success": True,
             "knowledge_bases": knowledge_bases,
-            "count": len(knowledge_bases)
+            "count": len(knowledge_bases),
         }
 
     @mcp_tool_with_error_handling
@@ -176,18 +199,14 @@ class VersemindMCPService:
         kb_info = next((kb for kb in knowledge_bases if kb["id"] == kb_id), None)
 
         if not kb_info:
-            return {
-                "success": False,
-                "error": f"Knowledge base '{kb_id}' not found"
-            }
+            return {"success": False, "error": f"Knowledge base '{kb_id}' not found"}
 
-        return {
-            "success": True,
-            "knowledge_base": kb_info
-        }
+        return {"success": True, "knowledge_base": kb_info}
 
     @mcp_tool_with_error_handling
-    async def search_knowledge_base(self, query: str, kb_id: Optional[str] = None, limit: int = 5) -> Dict[str, Any]:
+    async def search_knowledge_base(
+        self, query: str, kb_id: Optional[str] = None, limit: int = 5
+    ) -> Dict[str, Any]:
         """Search in a knowledge base or all knowledge bases."""
         # This is a mock implementation
         logger.info(f"Mock search: query='{query}', kb_id={kb_id}, limit={limit}")
@@ -200,10 +219,10 @@ class VersemindMCPService:
                     "id": "result_1",
                     "content": f"Mock search result for query: {query}",
                     "score": 0.95,
-                    "source": kb_id or "all_knowledge_bases"
+                    "source": kb_id or "all_knowledge_bases",
                 }
             ],
-            "total_results": 1
+            "total_results": 1,
         }
 
     @mcp_tool_with_error_handling
@@ -212,5 +231,5 @@ class VersemindMCPService:
         return {
             "success": True,
             "models": self.models,
-            "total_providers": len(self.models)
+            "total_providers": len(self.models),
         }

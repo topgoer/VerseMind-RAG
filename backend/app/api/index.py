@@ -7,14 +7,21 @@ router = APIRouter()
 # Initialize the index service which now gets settings internally
 index_service = IndexService()
 
+
 @router.post("/create")
 async def create_index(
     document_id: str = Body(...),
     embedding_id: str = Body(...),
-    vector_db: Optional[str] = Body(None),  # Optional, will use default from config if not provided
-    collection_name: Optional[str] = Body(None),  # Optional, will auto-generate if not provided
-    index_name: Optional[str] = Body(None),  # Optional, will auto-generate if not provided
-    version: str = Body("1.0")
+    vector_db: Optional[str] = Body(
+        None
+    ),  # Optional, will use default from config if not provided
+    collection_name: Optional[str] = Body(
+        None
+    ),  # Optional, will auto-generate if not provided
+    index_name: Optional[str] = Body(
+        None
+    ),  # Optional, will auto-generate if not provided
+    version: str = Body("1.0"),
 ):
     """
     创建向量索引
@@ -26,7 +33,9 @@ async def create_index(
     - index_name: 索引名称，默认自动生成
     - version: 索引版本，默认为"1.0"
     """
-    print(f"[API LOG /api/index/create] Received: document_id='{document_id}', vector_db='{vector_db}', collection_name='{collection_name}', index_name='{index_name}', embedding_id='{embedding_id}', version='{version}'")
+    print(
+        f"[API LOG /api/index/create] Received: document_id='{document_id}', vector_db='{vector_db}', collection_name='{collection_name}', index_name='{index_name}', embedding_id='{embedding_id}', version='{version}'"
+    )
     try:
         # Use defaults from config if parameters are not provided
         result = index_service.create_index(
@@ -35,7 +44,7 @@ async def create_index(
             vector_db=vector_db,
             collection_name=collection_name,
             index_name=index_name,
-            version=version
+            version=version,
         )
         return result
     except FileNotFoundError as e:
@@ -44,6 +53,7 @@ async def create_index(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"索引创建失败: {str(e)}")
+
 
 @router.get("/list")
 async def list_indices(document_id: Optional[str] = Query(None)):
@@ -64,11 +74,9 @@ async def list_indices(document_id: Optional[str] = Query(None)):
         print(f"[API ERROR] Error listing indices: {str(e)}")
         return []
 
+
 @router.put("/{index_id}")
-async def update_index(
-    index_id: str,
-    version: str = Body(...)
-):
+async def update_index(index_id: str, version: str = Body(...)):
     """
     更新索引版本
     """
@@ -79,6 +87,7 @@ async def update_index(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"索引更新失败: {str(e)}")
+
 
 @router.delete("/{index_id}")
 async def delete_index(index_id: str):
