@@ -2,7 +2,7 @@ import os
 import json
 import datetime
 import uuid
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import re
 import logging
 import pandas as pd  # added for table parsing
@@ -14,13 +14,16 @@ logger = get_logger_with_env_level(__name__)
 class ParseService:
     """文档解析服务，支持全文、分页、标题结构解析"""
     
-    def __init__(self):
-        # Update directories according to the naming convention
-        self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
-        self.documents_dir = os.path.join(self.storage_dir, 'storage', 'documents')
-        # Use paths that match the actual directory structure
-        self.chunks_dir = os.path.join(self.storage_dir, 'backend', '02-chunked-docs')
-        self.parsed_dir = os.path.join(self.storage_dir, 'backend', '03-parsed-docs')
+    def __init__(self, chunks_dir=None, parsed_dir=None):
+        # Update directories according to the naming convention using pathlib for consistency
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        self.storage_dir = str(project_root)
+        self.documents_dir = str(project_root / 'storage' / 'documents')
+        
+        # Use absolute paths with project_root as base directory
+        self.chunks_dir = chunks_dir or str(project_root / 'backend' / '02-chunked-docs')  
+        self.parsed_dir = parsed_dir or str(project_root / 'backend' / '03-parsed-docs')
         
         # Create directories if they don't exist
         os.makedirs(self.documents_dir, exist_ok=True)
@@ -216,23 +219,41 @@ class ParseService:
     
     def _find_chunk_file(self, document_id: str) -> Optional[str]:
         """查找指定文档的分块文件"""
-        self.logger.debug(f"Searching for chunk file for document ID: {document_id} in {self.chunks_dir}")
+        self.logger.debug(f"Searching for chunk file for document ID: {document_id}")
         
-        # 首先在主要的 chunks 目录中查找
-        chunk_file = self._search_chunk_file_in_directory(document_id, self.chunks_dir)
-        if chunk_file:
-            return chunk_file
+        # Try all possible locations for chunk files
+        search_paths = [
+            self.chunks_dir,                                            # Primary path (backend/02-chunked-docs)
+            os.path.join(self.storage_dir, 'backend', '02-chunked-docs'),  # Backend folder path
+            os.path.join(self.storage_dir, '02-chunked-docs'),          # Root directory path
+            os.path.join(self.storage_dir, 'backend/02-chunked-docs'),  # Alt path format
+            os.path.join(os.path.dirname(__file__), '../../../../backend/02-chunked-docs') # Absolute path
+        ]
         
-        # 如果未找到，在备用目录中查找
-        alt_chunks_dir = os.path.join(self.storage_dir, '02-chunked-docs')
-        return self._search_chunk_file_in_directory(document_id, alt_chunks_dir, is_alternative=True)
+        # Log all search paths
+        for i, path in enumerate(search_paths):
+            self.logger.debug(f"Search path {i+1}: {path}")
+            if os.path.exists(path):
+                self.logger.debug(f"Path {i+1} exists")
+            else:
+                self.logger.debug(f"Path {i+1} does NOT exist")
+        
+        # Search through all possible locations
+        for i, path in enumerate(search_paths):
+            is_alternative = (i > 0)  # First path is primary, others are alternatives
+            self.logger.debug(f"Searching in {'alternative' if is_alternative else 'primary'} path: {path}")
+            
+            chunk_file = self._search_chunk_file_in_directory(document_id, path, is_alternative=is_alternative)
+            if chunk_file:
+                self.logger.info(f"Found chunk file at: {chunk_file}")
+                return chunk_file
+        
+        self.logger.error(f"No chunk file found for document ID: {document_id} in any location")
+        return None
     
     def _search_chunk_file_in_directory(self, document_id: str, directory: str, is_alternative: bool = False) -> Optional[str]:
         """在指定目录中搜索分块文件"""
-        if not os.path.exists(directory):
-            return None
-        
-        if is_alternative and directory == self.chunks_dir:
+        if not self._validate_search_directory(directory, is_alternative):
             return None
         
         newest_chunk_file = None
@@ -241,24 +262,95 @@ class ParseService:
         if is_alternative:
             self.logger.debug(f"Checking alternative chunks directory: {directory}")
         
-        for filename in os.listdir(directory):
-            if self._is_valid_chunk_file(filename, document_id):
-                filepath = os.path.join(directory, filename)
-                file_mtime = os.path.getmtime(filepath)
+        try:
+            files = self._get_directory_files(directory)
+            
+            # First try: find by filename
+            newest_chunk_file, newest_time = self._find_chunk_by_filename(
+                document_id, directory, files, newest_time
+            )
+            
+            # Second try: find by metadata
+            if not newest_chunk_file:
+                newest_chunk_file, newest_time = self._find_chunk_by_metadata(
+                    document_id, directory, files, newest_time
+                )
                 
-                if file_mtime > newest_time:
-                    newest_time = file_mtime
-                    newest_chunk_file = filepath
+        except Exception as e:
+            self.logger.error(f"Error searching for chunk files in {directory}: {e}")
         
         if newest_chunk_file:
-            location_type = "alternative location" if is_alternative else "primary location"
-            self.logger.debug(f"Found chunk file in {location_type}: {os.path.basename(newest_chunk_file)}")
+            self._log_found_chunk(newest_chunk_file, is_alternative)
             return newest_chunk_file
         
         if not is_alternative:
             self.logger.warning(f"Chunk file for document ID: {document_id} not found in {directory} or alternative locations")
         
         return None
+        
+    def _validate_search_directory(self, directory: str, is_alternative: bool) -> bool:
+        """Validate if directory should be searched"""
+        if not os.path.exists(directory):
+            self.logger.warning(f"Directory does not exist: {directory}")
+            return False
+        
+        if is_alternative and directory == self.chunks_dir:
+            return False
+            
+        return True
+        
+    def _get_directory_files(self, directory: str) -> List[str]:
+        """Get list of files from directory"""
+        files = os.listdir(directory)
+        self.logger.debug(f"Found {len(files)} files in {directory}")
+        return files
+        
+    def _find_chunk_by_filename(self, document_id: str, directory: str, files: List[str], newest_time: float) -> Tuple[Optional[str], float]:
+        """Find chunk file by checking if document_id appears in filename"""
+        from app.services.chunk_service import CHUNKS_JSON_SUFFIX
+        newest_chunk_file = None
+        
+        for filename in files:
+            if document_id in filename:
+                filepath = os.path.join(directory, filename)
+                self.logger.debug(f"Found potential chunk file: {filepath}")
+                
+                if os.path.exists(filepath) and filename.endswith(CHUNKS_JSON_SUFFIX):
+                    file_mtime = os.path.getmtime(filepath)
+                    
+                    if file_mtime > newest_time:
+                        newest_time = file_mtime
+                        newest_chunk_file = filepath
+                        self.logger.debug(f"Set as newest chunk file: {filepath}")
+                        
+        return newest_chunk_file, newest_time
+    
+    def _find_chunk_by_metadata(self, document_id: str, directory: str, files: List[str], newest_time: float) -> Tuple[Optional[str], float]:
+        """Find chunk file by loading each file and checking metadata"""
+        from app.services.chunk_service import CHUNKS_JSON_SUFFIX
+        newest_chunk_file = None
+        
+        for filename in files:
+            if filename.endswith(CHUNKS_JSON_SUFFIX):
+                filepath = os.path.join(directory, filename)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if data.get("document_id") == document_id:
+                            file_mtime = os.path.getmtime(filepath)
+                            if file_mtime > newest_time:
+                                newest_time = file_mtime
+                                newest_chunk_file = filepath
+                                self.logger.debug(f"Found chunk file by metadata: {filepath}")
+                except Exception as e:
+                    self.logger.warning(f"Error checking chunk file metadata for {filepath}: {e}")
+                    
+        return newest_chunk_file, newest_time
+    
+    def _log_found_chunk(self, chunk_file: str, is_alternative: bool) -> None:
+        """Log information about found chunk file"""
+        location_type = "alternative location" if is_alternative else "primary location"
+        self.logger.debug(f"Found chunk file in {location_type}: {os.path.basename(chunk_file)}")
     
     def _is_valid_chunk_file(self, filename: str, document_id: str) -> bool:
         """检查文件名是否为有效的分块文件"""
@@ -274,11 +366,10 @@ class ParseService:
             
         # If document_id is not in the filename, try to load the file and check its metadata
         try:
-            filepath = os.path.join(self.chunks_dir, filename)
-            if os.path.exists(filepath):
-                with open(filepath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return data.get("document_id") == document_id
+            # We need to use the current directory being searched, not always self.chunks_dir
+            # This will be handled by the calling function (_search_chunk_file_in_directory)
+            # which passes the full filepath
+            return False
         except Exception as e:
             self.logger.warning(f"Error checking chunk file metadata: {e}")
             
@@ -476,18 +567,82 @@ class ParseService:
     def _get_chunk_data(self, document_id: str, page_map: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """获取分块数据"""
         if page_map is not None:
-            self.logger.info("Using provided page_map for parsing.")
-            return {"chunks": [{"content": p["text"], "page": p.get("page"),
-                               "start_pos": None, "end_pos": None} for p in page_map]}
+            return self._create_chunk_data_from_page_map(page_map)
         
+        # First try to find the chunk file
         chunk_file = self._find_chunk_file(document_id)
         if not chunk_file:
-            self.logger.error(f"Chunk file not found for document ID: {document_id}. Please chunk the document first.")
-            raise FileNotFoundError(f"请先对文档ID {document_id} 进行分块处理")
+            self._handle_missing_chunk_file(document_id)
         
-        self.logger.info(f"Loading chunk data from: {chunk_file}")
-        with open(chunk_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+        # Now load the chunk data
+        return self._load_chunk_file(chunk_file, document_id)
+        
+    def _create_chunk_data_from_page_map(self, page_map: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Create chunk data from provided page map"""
+        self.logger.info("Using provided page_map for parsing.")
+        return {
+            "chunks": [
+                {
+                    "content": p["text"], 
+                    "page": p.get("page"),
+                    "start_pos": None, 
+                    "end_pos": None
+                } for p in page_map
+            ]
+        }
+        
+    def _handle_missing_chunk_file(self, document_id: str) -> None:
+        """Handle the case when chunk file is not found"""
+        # Get search paths
+        search_paths = self._get_chunk_search_paths()
+        
+        # Build error message
+        error_msg = self._build_chunk_error_message(document_id, search_paths)
+            
+        self.logger.error(error_msg)
+        raise FileNotFoundError(f"请先对文档ID {document_id} 进行分块处理 (Please chunk document ID {document_id} first)")
+        
+    def _get_chunk_search_paths(self) -> List[str]:
+        """Get all the paths where we search for chunk files"""
+        return [
+            self.chunks_dir,
+            os.path.join(self.storage_dir, 'backend', '02-chunked-docs'),
+            os.path.join(self.storage_dir, '02-chunked-docs'),
+            os.path.join(self.storage_dir, 'backend/02-chunked-docs')
+        ]
+        
+    def _build_chunk_error_message(self, document_id: str, search_paths: List[str]) -> str:
+        """Build detailed error message for missing chunk file"""
+        error_msg = f"Chunk file not found for document ID: {document_id}. Please chunk the document first.\n"
+        error_msg += "Locations searched:\n"
+        
+        # Add search paths to error message
+        for path in search_paths:
+            if os.path.exists(path):
+                error_msg += f" - {path} (exists)\n"
+            else:
+                error_msg += f" - {path} (does not exist)\n"
+        
+        # Add information about files in chunks_dir
+        if os.path.exists(self.chunks_dir):
+            files = os.listdir(self.chunks_dir)
+            error_msg += f"\nFiles in {self.chunks_dir} ({len(files)} files):\n"
+            for i, f in enumerate(files[:10]):  # Show only first 10 files
+                error_msg += f" - {f}\n"
+            if len(files) > 10:
+                error_msg += f" - ... and {len(files) - 10} more files\n"
+        
+        return error_msg
+    
+    def _load_chunk_file(self, chunk_file: str, document_id: str) -> Dict[str, Any]:
+        """Load chunk data from file"""
+        try:
+            self.logger.info(f"Loading chunk data from: {chunk_file}")
+            with open(chunk_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            self.logger.error(f"Error loading chunk data from {chunk_file}: {str(e)}")
+            raise FileNotFoundError(f"Error loading chunk data for document ID {document_id}: {str(e)}")
     
     def _create_metadata(self, document_path: str, chunk_data: Dict[str, Any], strategy: str, timestamp: str) -> Dict[str, Any]:
         """创建元数据"""

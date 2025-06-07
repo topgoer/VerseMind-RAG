@@ -1,11 +1,8 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 
-// 创建语言上下文
-export const LanguageContext = createContext();
-
-// 语言文本
-export const translations = {
+// Define language translations
+const translations = {
   en: {
     // 通用
     appTitle: 'VerseMind-RAG',
@@ -13,6 +10,7 @@ export const translations = {
     copyright: '© 2025 VerseMind',
     providerLabel: 'Provider',
     modelLabel: 'Model',
+    download: 'Download',
     
     // Storage Info Panel
     storageInfo: 'Storage Information',
@@ -309,6 +307,7 @@ export const translations = {
     copyright: '© 2025 VerseMind',
     providerLabel: '提供商',
     modelLabel: '模型',
+    download: '下载',
     
     // Storage Info Panel
     storageInfo: '存储信息',
@@ -448,9 +447,9 @@ export const translations = {
     
     // 向量索引模块
     vectorIndexing: '向量索引',
-    indexingDesc: '创建向量索引以支持高效检索。',
+    indexingDesc: '创建向量索引以便高效检索。',
     vectorDatabase: '向量数据库',
-    vectorDb: '向量库',
+    vectorDb: '向量数据库',
     indexType: '索引类型',
     existingIndices: '现有索引',
     allIndices: '-- 请选择集合 --',
@@ -458,15 +457,15 @@ export const translations = {
     indexInfo: '索引信息',
     collectionName: '集合名称',
     indexIdOrCollection: '索引ID或集合名称',
-    indexOrCollectionPlaceholder: '选择集合',
+    indexOrCollectionPlaceholder: '选择一个集合',
     usingIndexId: '使用索引ID',
     usingCollectionName: '使用集合名称',
-    indexCollectionHelp: '您可以输入集合名称或特定的索引ID。集合名称将搜索多个文档，而索引ID则针对特定文档。',
+    indexCollectionHelp: '您可以输入集合名称或特定的索引ID。集合名称会在多个文档中搜索，而索引ID则针对特定文档。',
     clearSelection: '清除选择',
     indexSource: '索引: {id}',
     collectionSource: '集合: {name}',
-    collectionPlaceholder: '例如：finance_documents',
-    collectionDescription: '将相关索引组织到一个集合中以便更好地管理',
+    collectionPlaceholder: '例如：财务文档',
+    collectionDescription: '将相关索引分组到集合中以便更好地组织',
     selectCollectionDescription: '选择一个集合以搜索其所有索引，或在下方选择特定索引',
     filterByCollection: '按集合筛选',
     allCollections: '所有集合',
@@ -474,15 +473,15 @@ export const translations = {
     selectCollection: '选择集合',
     useExistingCollection: '使用现有集合',
     selectCollectionOrIndex: '选择集合或索引',
-    noSelection: '不选择',
+    noSelection: '未选择',
     noIndicesInCollection: '此集合中没有索引',
     collection: '集合',
     document: '文档',
-    indices: '索引',
+    indices: '个索引',
     unknown: '未知',
     fullIndexId: '完整索引ID',
     indexName: '索引名称',
-    indexPlaceholder: '例如：quarterly_reports',
+    indexPlaceholder: '例如：季度报告',
     createIndex: '创建索引',
     indexList: '索引列表',
     indexId: '索引ID',
@@ -490,24 +489,24 @@ export const translations = {
     vectors: '向量数',
     noIndices: '暂无索引',
     deleteCollection: '删除集合',
-    deleteCollectionConfirm: '确定要删除此集合吗？',
+    deleteCollectionConfirm: '您确定要删除此集合吗？',
     existingEmbeddings: '现有嵌入',
     filterByDocument: '按文档筛选',
     clearFilter: '清除筛选',
-    noEmbeddingsForDocument: '未找到此文档的嵌入',
-    useFormAboveToCreateEmbeddings: '使用上面的表单创建嵌入',
+    noEmbeddingsForDocument: '未找到该文档的嵌入',
+    useFormAboveToCreateEmbeddings: '请使用上方表单创建嵌入',
     
     // 语义搜索模块
     semanticSearch: '语义搜索',
-    searchDesc: '基于向量相似度进行精准检索。',
+    searchDesc: '基于向量相似度进行精确检索。',
     selectIndex: '-- 请选择集合 --',
     queryText: '查询文本',
     searchQuery: '查询文本',
-    queryPlaceholder: '输入您的问题或查询...',
-    searchQueryPlaceholder: '输入您的问题或查询...',
-    resultCount: '返回结果数量',
-    minCharacters: '最小字符数',
-    minChars: '最小字符数',
+    queryPlaceholder: '请输入您的问题或查询...',
+    searchQueryPlaceholder: '请输入您的问题或查询...',
+    resultCount: '结果数量',
+    minCharacters: '最少字符数',
+    minChars: '最少字符数',
     performSearch: '执行搜索',
     search: '搜索',
     searchResults: '搜索结果',
@@ -515,32 +514,32 @@ export const translations = {
     queryInfo: '查询信息',
     searchId: '搜索ID:',
     documentFilename: '文档:',
-    documentFromSearch: '搜索结果文档',
+    documentFromSearch: '搜索结果',
     documentSource: '源文档:',
-    documentReference: '文档引用:',
+    documentReference: '文档参考:',
     documentContext: '文档上下文',
     usingDocumentContext: '使用文档上下文',
     searchIdLabel: '搜索ID',
     searchCompleted: '搜索完成',
     documentsInCollection: '个文档在集合中',
     noDocumentContext: '无文档上下文',
-    noContextExplanation: '此回答生成未使用任何文档索引或搜索上下文。',
+    noContextExplanation: '此回复未通过文档索引或搜索上下文生成。',
     relatedText: '相关文本',
     result: '结果',
     similarity: '相似度:',
     source: '来源:',
-    noResults: '未找到相关结果',
+    noResults: '未找到结果',
     enterQuery: '请输入查询并执行搜索',
     
     // 文本生成模块
     textGeneration: '文本生成',
-    generationDesc: '基于检索结果生成连贯、相关的回答。',
+    generationDesc: '基于检索结果生成连贯、相关的回复。',
     usingSearchResults: '使用最近的搜索结果',
     query: '查询:',
     foundResults: '找到',
     relevantResults: '个相关结果',
     promptText: '提示文本',
-    promptPlaceholder: '输入您的提示，例如：总结这些文档的主要观点...',
+    promptPlaceholder: '请输入您的提示，例如：总结这些文档的主要观点...',
     generationProvider: '生成提供商',
     generationModel: '生成模型',
     temperature: '温度',
@@ -557,24 +556,24 @@ export const translations = {
     
     // 对话式问答模块
     conversationalQA: '对话式问答',
-    chatDesc: '使用自然语言提问，基于您的文档获取回答。',
+    chatDesc: '使用自然语言提问并基于您的文档获得答案。',
     selectModel: '选择模型',
-    askQuestion: '输入问题或请求任务...',
+    askQuestion: '提出问题或请求任务...',
     chatPlaceholder: '在此输入您的消息...',
     send: '发送',
     sending: '发送中...',
     thinking: '思考中...',
-    references: '引用来源',
-    messagesCount: '{count}条消息',
+    references: '参考文献',
+    messagesCount: '{count} 条消息',
     startConversation: '开始对话',
-    welcomeMessage: '欢迎使用VerseMind-RAG！请选择一个集合，然后提问关于您文档的问题。',
+    welcomeMessage: '欢迎使用 VerseMind-RAG！请选择集合并就您的文档提问。',
     selectIndexFirst: '请先选择一个集合',
     chatError: '处理您的请求时发生错误',
     
     // 任务型请求
     taskDetected: '我检测到以下任务：',
-    taskPromptPrefix: '请基于文档执行以下任务：',
-    taskExtractPage: '提取第{page}页的内容',
+    taskPromptPrefix: '请根据文档执行以下任务：',
+    taskExtractPage: '提取第 {page} 页的内容',
     taskSummarize: '生成内容摘要',
     taskCompare: '比较信息',
     taskFind: '查找特定信息',
@@ -600,33 +599,38 @@ export const translations = {
   }
 };
 
-// 语言提供者组件
+// Create LanguageContext
+export const LanguageContext = React.createContext();
+
+// Custom hook to use the language context
+export const useLanguage = () => React.useContext(LanguageContext);
+
+// Create LanguageProvider component
 export const LanguageProvider = ({ children }) => {
-  const [language, setLanguage] = useState('en');
-  
-  const toggleLanguage = () => {
-    setLanguage(language === 'en' ? 'zh' : 'en');
-  };
-  
-  const t = useCallback((key, params = {}) => {
-    let text = translations[language][key] || key;
-    
-    // 处理参数替换
-    if (params) {
-      Object.keys(params).forEach(param => {
-        text = text.replace(`{${param}}`, params[param]);
-      });
-    }
-    
-    return text;
-  }, [language]);
-  
+  const [language, setLanguage] = React.useState('en'); // Default language
+
+  const translate = useCallback((key, replacements = {}) => {
+    const langTranslations = translations[language] || translations.en; // Fallback to 'en' if current language's translations are missing
+    let translationString = langTranslations[key] || key; // Use a different variable name to avoid confusion
+    Object.keys(replacements).forEach(placeholder => {
+      translationString = translationString.replace(`{${placeholder}}`, replacements[placeholder]);
+    });
+    return translationString;
+  }, [language]); // translations is stable as it's defined outside the component
+
+  const toggleLanguage = useCallback(() => {
+    setLanguage(prevLang => (prevLang === 'en' ? 'zh' : 'en'));
+  }, []); // setLanguage from useState is stable
+
   const contextValue = useMemo(() => ({
-    language, 
-    toggleLanguage, 
-    t
-  }), [language, t]);
-  
+    language,
+    setLanguage,    // Allow consumers to set language directly if needed
+    toggleLanguage,
+    translate,      // Provide the main translate function
+    t: translate,    // Provide 't' as a convenient alias for translate
+    // translations, // Optionally include all translations; removed for now to keep context minimal
+  }), [language, setLanguage, toggleLanguage, translate]);
+
   return (
     <LanguageContext.Provider value={contextValue}>
       {children}
@@ -634,17 +638,7 @@ export const LanguageProvider = ({ children }) => {
   );
 };
 
-// 自定义钩子，方便在组件中使用
-export const useLanguage = () => {
-  const context = useContext(LanguageContext);
-  if (!context) {
-    throw new Error('useLanguage must be used within a LanguageProvider');
-  }
-  return context;
-};
-
-// Add PropTypes validation for LanguageProvider
 LanguageProvider.propTypes = {
-  children: PropTypes.node.isRequired
+  children: PropTypes.node.isRequired,
 };
 

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
+import { getLogger } from '../../utils/logger';
+
+const logger = getLogger('SearchModule');
 
 function SearchModule({ indices = [], documents = [], loading, error, onSearch }) { // Add documents prop
   const { t } = useLanguage();
@@ -29,7 +32,7 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
   useEffect(() => {
     if (Array.isArray(indices) && indices.length > 0) {
       // Get unique collection names
-      // console.log('[SearchModule] Processing indices for collections:', indices);
+      logger.debug('Processing indices for collections:', indices);
       
       // Debug raw values - make sure collection_name is actually present
       const rawValues = indices.map(idx => {
@@ -40,11 +43,11 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
           document_id: idx.document_id
         }
       });
-      // console.log('[SearchModule] Raw collection values in indices:', rawValues);
+      logger.debug('Raw collection values in indices:', rawValues);
       
       // Debug additional info about collection structure
-      // console.log('[SearchModule] Index keys:', indices.length > 0 ? Object.keys(indices[0]) : 'No indices');
-      // console.log('[SearchModule] First few indices sample:', indices.slice(0, 3));
+      logger.debug('Index keys:', indices.length > 0 ? Object.keys(indices[0]) : 'No indices');
+      logger.debug('First few indices sample:', indices.slice(0, 3));
       
       // Filter non-empty collection names and create unique set
       const uniqueCollections = [...new Set(
@@ -53,10 +56,10 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
           .filter(name => name && name.trim() !== '')
       )];
       
-      // console.log('[SearchModule] Found collections:', uniqueCollections);
+      logger.debug('Found collections:', uniqueCollections);
       setAvailableCollections(uniqueCollections);
     } else {
-      // console.log('[SearchModule] No indices found or indices is not an array:', indices);
+      logger.debug('No indices found or indices is not an array:', indices);
       setAvailableCollections([]);
     }
   }, [indices]);
@@ -78,7 +81,7 @@ function SearchModule({ indices = [], documents = [], loading, error, onSearch }
       setSearchResults(results);
     } catch (err) {
       // 错误已在 App.jsx 中处理
-      console.error("Search failed in module:", err);
+      logger.error("Search failed in module:", err);
     }
   };
 

@@ -5,8 +5,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
+import { getLogger } from '../../utils/logger';
 import StorageInfoPanel from './StorageInfoPanel'; // 导入StorageInfoPanel组件
 import DocumentContextDisplay from './DocumentContextDisplay';
+
+const logger = getLogger('ChatInterface');
 
 function ChatInterface({ 
   indices,
@@ -71,7 +74,7 @@ function ChatInterface({
       // If we couldn't parse it, return as is
       return timestamp;
     } catch (error) {
-      console.error('Error formatting timestamp:', error);
+      logger.error('Error formatting timestamp:', error);
       return timestamp || '';
     }
   };
@@ -112,7 +115,7 @@ function ChatInterface({
         setCopiedType(null);
       }, 2000);
     } catch (e) {
-      console.error("Failed to copy to clipboard:", e);
+      logger.error("Failed to copy to clipboard:", e);
       // Display error in UI (optional)
       // You could set a state variable here to show a short error toast/notification
       setCopiedMsgId(null);
@@ -126,7 +129,7 @@ function ChatInterface({
     const fetchConfig = async () => {
       try {
         const configData = await loadConfig();
-        // console.log("[ChatInterface] Config loaded:", configData);
+        logger.debug("Config loaded:", configData);
         setConfig(configData);
         setConfigLoading(false);
         
@@ -149,7 +152,7 @@ function ChatInterface({
           setTopK(configData.search_params.top_k);
         }
       } catch (error) {
-        console.error("[ChatInterface] Error loading config:", error);
+        logger.error("Error loading config:", error);
         setConfigLoading(false);
       }
     };
@@ -165,7 +168,7 @@ function ChatInterface({
       return;
     }
       if (!Array.isArray(indices)) {
-      console.error("[ChatInterface] Indices prop is not an array:", typeof indices, indices);
+      logger.error("Indices prop is not an array:", typeof indices, indices);
       return;
     }
     
@@ -177,9 +180,9 @@ function ChatInterface({
       const checkBackendAvailability = async () => {
         try {
           const response = await fetch('/api/health');
-          // console.log("[ChatInterface] Backend health check:", response.ok ? 'OK' : 'Not OK');
+          logger.debug("Backend health check:", response.ok ? 'OK' : 'Not OK');
         } catch (err) {
-          console.error("[ChatInterface] Backend may not be available:", err);
+          logger.error("Backend may not be available:", err);
         }
       };
       checkBackendAvailability();
@@ -229,7 +232,7 @@ function ChatInterface({
           lockScrollUpdateRef.current = false;
         }, 300);
       } catch (err) {
-        console.error("Error scrolling to bottom:", err);
+        logger.error("Error scrolling to bottom:", err);
         lockScrollUpdateRef.current = false;
       }
     }, 100);
@@ -368,7 +371,7 @@ function ChatInterface({
     if ((!inputMessage.trim() && !selectedImage) || !selectedModel) return;
     
     const inputType = getInputType(selectedIndex);
-    // console.log('[ChatInterface][handleSendMessage] selectedIndex:', selectedIndex, 'type:', inputType);
+    logger.debug('[handleSendMessage] selectedIndex:', selectedIndex, 'type:', inputType);
     
     if (typeof onSendMessage === 'function') {
       // Get all indices to search based on selection
@@ -403,7 +406,7 @@ function ChatInterface({
       // If no index is selected, it will generate text without search context
       onSendMessage(selectedIndex || null, inputMessage, selectedProvider, selectedModel, selectedImage, searchParams);
     } else {
-      console.error("CRITICAL ERROR: onSendMessage prop in ChatInterface is not a function!", {
+      logger.critical("onSendMessage prop in ChatInterface is not a function!", {
         propType: typeof onSendMessage,
         propValue: onSendMessage
       });

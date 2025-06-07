@@ -15,21 +15,28 @@ logger = get_logger_with_env_level(__name__)
 class LoadService:
     """文档加载服务，支持PDF、DOCX、TXT、Markdown格式"""
     
-    def __init__(self, storage_dir="storage/documents"):
+    def __init__(self, storage_dir="storage/documents", documents_dir=None):
         # Ensure storage directory is absolute, based on project root
         from pathlib import Path
         import logging
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         abs_storage = project_root / storage_dir
         self.storage_dir = str(abs_storage)
-        self.documents_dir = self.storage_dir  # Add documents_dir for compatibility with tests
+        
+        # Store relative path but use absolute when needed
+        self.documents_dir = "backend/01-loaded_docs" if documents_dir is None else documents_dir
+        # Also create a full absolute path to avoid path resolution issues
+        self.abs_documents_dir = str(project_root / self.documents_dir)
         os.makedirs(self.storage_dir, exist_ok=True)
+        os.makedirs(self.abs_documents_dir, exist_ok=True)
+        
         self.logger = logging.getLogger(__name__)
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(name)s: %(message)s'))
         if not self.logger.hasHandlers():
             self.logger.addHandler(handler)
         self.logger.debug(f"[LoadService] storage_dir set to: {self.storage_dir}")
+        self.logger.debug(f"[LoadService] documents_dir set to: {self.documents_dir} (absolute: {self.abs_documents_dir})")
         self.total_pages = 0
         self.current_page_map = []
     
@@ -113,6 +120,24 @@ class LoadService:
             self.logger.debug(f"[load_document] Loading TXT/MD: {file_path}")
             text_info = self._extract_text_info(file_path)
             doc_info["preview"] = text_info["preview"]
+        elif file_ext == '.csv':
+            self.logger.debug(f"[load_document] Loading CSV: {file_path}")
+            try:
+                import csv
+                with open(file_path, newline='', encoding='utf-8') as csvfile:
+                    reader = csv.reader(csvfile)
+                    rows = list(reader)
+                    preview_text = '\n'.join([', '.join(row) for row in rows[:5]])
+            except Exception as e:
+                self.logger.error(f"Failed to load CSV {file.filename}: {str(e)}")
+                raise ValueError(f"Failed to process CSV: {str(e)}")
+
+            doc_info.update({
+                "metadata": {},
+                "preview": preview_text,
+                "row_count": len(rows),
+                "column_count": len(rows[0]) if rows else 0
+            })
         
         self.logger.debug(f"[load_document] Returning doc_info: {doc_info['filename']} (ID: {doc_info['id']})")
         self.save_document_json(doc_info)  # 自动保存为JSON
@@ -294,7 +319,7 @@ class LoadService:
     def get_document_list(self):
         """获取已上传文档列表（真实目录，无任何硬编码示例数据）"""
         documents = []
-        self.logger.debug(f"Reading document list from directory: {self.storage_dir}")
+        self.logger.debug(f"Reading document list from storage directory: {self.storage_dir}")
         
         if not os.path.exists(self.storage_dir):
             self.logger.warning(f"Storage directory does not exist: {self.storage_dir}")
@@ -312,6 +337,9 @@ class LoadService:
                 except Exception as e:
                     self.logger.error(f"Error processing file {filename}: {str(e)}")
                     # Continue with next file
+            
+            # No longer need to check for duplicate backend/backend folder
+            # since it has been cleaned up in the cleanup-backend-duplicate.ps1 script
             
             self.logger.debug(f"Returning {len(documents)} documents from storage directory")
             return documents
@@ -542,13 +570,18 @@ class LoadService:
         """
         import json
         from datetime import datetime
-        os.makedirs("01-loaded_docs", exist_ok=True)
+        
+        # Always use absolute path to avoid path resolution issues
+        documents_dir = self.abs_documents_dir
+        self.logger.debug(f"[save_document_json] Using absolute path: {documents_dir}")
+        os.makedirs(documents_dir, exist_ok=True)
+        
         # 生成文件名：原始名+时间戳+id.json
         base_name = os.path.splitext(doc_info.get("saved_as") or doc_info.get("filename"))[0]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = doc_info.get("id", "")
         json_filename = f"{base_name}_{timestamp}_{unique_id}.json"
-        json_path = os.path.join("01-loaded_docs", json_filename)
+        json_path = os.path.join(documents_dir, json_filename)
         # 只保留主要字段
         save_data = {
             k: v for k, v in doc_info.items() if k in [

@@ -1,7 +1,10 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Download } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { getLogger } from '../../utils/logger';
+
+const logger = getLogger('LoadFileModule');
 
 function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumentDelete, onRefresh }) {
   const { t } = useLanguage();
@@ -18,12 +21,12 @@ function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumen
 
   const handleDelete = async (documentId) => {
     try {
-      // console.log(`[LoadFileModule] Attempting to delete document with ID: ${documentId}`);
+      logger.debug(`Attempting to delete document with ID: ${documentId}`);
       await onDocumentDelete(documentId);
-      // console.log(`[LoadFileModule] Document deletion successful for ID: ${documentId}`);
+      logger.debug(`Document deletion successful for ID: ${documentId}`);
       // Optionally, trigger a refresh or handle UI update here if not handled by parent
     } catch (err) {
-      console.error(`[LoadFileModule] Document deletion failed:`, err);
+      logger.error(`Document deletion failed:`, err);
       // Error is already handled and displayed by App.jsx
     }
   };
@@ -73,9 +76,9 @@ function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumen
           <h2 className="text-xl font-semibold">{t('documentList')}</h2>
           <button 
             onClick={() => {
-              // console.log('[LoadFileModule] Refreshing document list...');
+              logger.debug('Refreshing document list...');
               onRefresh().catch(err => {
-                console.error('[LoadFileModule] Error refreshing document list:', err);
+                logger.error('Error refreshing document list:', err);
               });
             }} 
             className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
@@ -106,16 +109,37 @@ function LoadFileModule({ documents, loading, error, onDocumentUpload, onDocumen
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.type}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.size}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.upload_time}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">{doc.pages}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
+                      {(() => {
+                        if (doc.pages !== undefined) {
+                          return doc.pages;
+                        }
+                        if (doc.row_count !== undefined) {
+                          return doc.row_count;
+                        }
+                        return '-';
+                      })()}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button 
-                        onClick={() => handleDelete(doc.id)} 
-                        className="text-red-600 hover:text-red-900 flex items-center"
-                        disabled={loading} // Disable button when loading
-                      >
-                        <Trash2 size={18} className="mr-1" />
-                        {t('delete')}
-                      </button>
+                      <div className="flex items-center">
+                        <a
+                          href={`/api/documents/${doc.id}/download`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-900 flex items-center mr-4"
+                        >
+                          <Download size={18} className="mr-1" />
+                          {t('download')}
+                        </a>
+                        <button
+                          onClick={() => handleDelete(doc.id)}
+                          className="text-red-600 hover:text-red-900 flex items-center"
+                          disabled={loading}
+                        >
+                          <Trash2 size={18} className="mr-1" />
+                          {t('delete')}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

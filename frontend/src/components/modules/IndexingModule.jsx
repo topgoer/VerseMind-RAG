@@ -3,6 +3,9 @@ import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadConfig } from '../../utils/configLoader';
 import { fetchEmbeddingsDirectly } from '../../services/api';
+import { getLogger } from '../../utils/logger';
+
+const logger = getLogger('IndexingModule');
 
 // Default vector databases if config fails to load
 const DEFAULT_VECTOR_DBS = {
@@ -33,10 +36,10 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
   // Load embeddings when component mounts or when embeddings array is empty
   useEffect(() => {
     const loadEmbeddingsData = async () => {
-      // console.log('[IndexingModule] Loading embeddings data, current status:', { 
-      //   hasEmbeddings: Array.isArray(embeddings) && embeddings.length > 0,
-      //   initialLoadDone
-      // });
+      logger.debug('Loading embeddings data, current status:', { 
+        hasEmbeddings: Array.isArray(embeddings) && embeddings.length > 0,
+        initialLoadDone
+      });
       
       try {
         // First try to use the provided onLoadEmbeddings function
@@ -46,12 +49,12 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         } 
         // If we still don't have embeddings after calling onLoadEmbeddings, fetch directly from API
         else if (!Array.isArray(embeddings) || embeddings.length === 0) {
-          // console.log('[IndexingModule] Directly fetching embeddings from backend API');
+          logger.debug('Directly fetching embeddings from backend API');
           await fetchEmbeddingsDirectlyFromAPI();
           setInitialLoadDone(true);
         }
       } catch (error) {
-        console.error('[IndexingModule] Error loading embeddings:', error);
+        logger.error('Error loading embeddings:', error);
       }
     };
 
@@ -61,7 +64,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         const data = await fetchEmbeddingsDirectly();
         
         if (Array.isArray(data) && data.length > 0) {
-          // console.log('[IndexingModule] Successfully fetched embeddings directly:', data.length);
+          logger.debug('Successfully fetched embeddings directly:', data.length);
           // If we have a setEmbeddings function in the parent component, update it
           if (typeof onLoadEmbeddings === 'function') {
             await onLoadEmbeddings(); // This will update the parent's state
@@ -69,14 +72,14 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
           return data;
         }
       } catch (err) {
-        console.error('[IndexingModule] Error directly fetching embeddings:', err);
+        logger.error('Error directly fetching embeddings:', err);
         throw err;
       }
     };
 
     // Always try to load embeddings on mount if we don't have any
     if ((!Array.isArray(embeddings) || embeddings.length === 0) && !loading && !initialLoadDone) {
-      // console.log('[IndexingModule] Loading embeddings on component mount or empty state');
+      logger.debug('Loading embeddings on component mount or empty state');
       loadEmbeddingsData();
     }
 
@@ -100,7 +103,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
             typeof configData.vector_databases === 'object') {
           setVectorDatabases(configData.vector_databases);
         } else {
-          console.warn('Using default vector databases configuration');
+          logger.warn('Using default vector databases configuration');
           setVectorDatabases(DEFAULT_VECTOR_DBS);
         }
         
@@ -118,7 +121,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
             setIndexType(availableTypes[0]); // Set default index type
           }
         } catch (err) {
-          console.error('Error setting default index type:', err);
+          logger.error('Error setting default index type:', err);
           // Fallback to first key in DEFAULT_VECTOR_DBS
           const defaultTypes = Object.keys(DEFAULT_VECTOR_DBS);
           if (defaultTypes.length > 0) {
@@ -126,7 +129,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
           }
         }
       } catch (err) {
-        console.error('Error loading configuration:', err);
+        logger.error('Error loading configuration:', err);
         setVectorDatabases(DEFAULT_VECTOR_DBS);
         const availableTypes = Object.keys(DEFAULT_VECTOR_DBS);
         if (availableTypes && availableTypes.length > 0) {
@@ -143,7 +146,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
   // Automatically set the first embedding if available
   useEffect(() => {
     if (Array.isArray(embeddings) && embeddings.length > 0 && !selectedEmbedding) {
-      // console.log('[IndexingModule] Embeddings loaded, setting first embedding as default');
+      logger.debug('Embeddings loaded, setting first embedding as default');
       setSelectedEmbedding(embeddings[0].embedding_id);
     }
   }, [embeddings, selectedEmbedding]);
@@ -176,14 +179,14 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
         throw new Error("Selected embedding not found");
       }
 
-      // console.log('[IndexingModule] Type of onCreateIndex:', typeof onCreateIndex);
-      // console.log('[IndexingModule] Creating index for document:', embeddingInfo.document_id);
-      // console.log('[IndexingModule] Using vector DB:', indexType);
-      // console.log('[IndexingModule] Using embedding ID:', selectedEmbedding);
-      // console.log('[IndexingModule] Using collection name:', collectionName || 'default');
+      logger.debug('Type of onCreateIndex:', typeof onCreateIndex);
+      logger.debug('Creating index for document:', embeddingInfo.document_id);
+      logger.debug('Using vector DB:', indexType);
+      logger.debug('Using embedding ID:', selectedEmbedding);
+      logger.debug('Using collection name:', collectionName || 'default');
 
       if (typeof onCreateIndex !== 'function') {
-        console.error('[IndexingModule] onCreateIndex is not a function. Props received by IndexingModule:', { embeddings, indices, documents, loading, error, onCreateIndex, onIndexDelete, onRefresh });
+        logger.error('onCreateIndex is not a function. Props received by IndexingModule:', { embeddings, indices, documents, loading, error, onCreateIndex, onIndexDelete, onRefresh });
         throw new TypeError('onCreateIndex prop is not a function as expected in IndexingModule.');
       }
 
@@ -203,8 +206,8 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
       
       setIndexResult(result);
       
-      // console.log('[IndexingModule] Index creation result:', result);
-      // console.log('[IndexingModule] Using collection:', finalCollectionName);
+      logger.debug('Index creation result:', result);
+      logger.debug('Using collection:', finalCollectionName);
       
       // If the collection we used is not in our list, add it
       if (!availableCollections.includes(finalCollectionName)) {
@@ -216,7 +219,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
       
     } catch (err) {
       // 错误已在 App.jsx 中处理
-      console.error("Indexing failed in module:", err);
+      logger.error("Indexing failed in module:", err);
     }
   };
 
@@ -236,15 +239,15 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
   const handleLoadEmbeddings = async () => {
     try {
       if (onLoadEmbeddings && typeof onLoadEmbeddings === 'function') {
-        // console.log('[IndexingModule] Refreshing embeddings via parent component');
+        logger.debug('Refreshing embeddings via parent component');
         await onLoadEmbeddings();
       } else {
-        // console.log('[IndexingModule] Refreshing embeddings directly from API');
+        logger.debug('Refreshing embeddings directly from API');
         await fetchEmbeddingsDirectlyFromAPI();
       }
-      // console.log('[IndexingModule] Embeddings refresh completed');
+      logger.debug('Embeddings refresh completed');
     } catch (error) {
-      console.error('[IndexingModule] Error refreshing embeddings:', error);
+      logger.error('Error refreshing embeddings:', error);
     }
   };
 
@@ -380,7 +383,7 @@ function IndexingModule({ embeddings = [], indices = [], documents = [], loading
                     }
                     return <option value="">{t('noIndexTypesConfigured')}</option>;
                   } catch (err) {
-                    console.error('Error rendering vector database options:', err);
+                    logger.error('Error rendering vector database options:', err);
                     return <option value="">{t('errorLoadingOptions')}</option>;
                   }
                 })()

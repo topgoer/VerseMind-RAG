@@ -220,25 +220,84 @@ class EmbedService:
             raise ValueError(f"创建嵌入函数失败: {str(e)}")
     
     def _load_and_extract_text_chunks(self, document_id: str) -> List[Dict[str, Any]]:
-        """加载解析数据并提取文本块"""
+        """Load parsed document and extract text chunks for embedding"""
+        # Find the parsed file
         parsed_file = self._find_parsed_file(document_id)
         if not parsed_file:
-            self.logger.error(f"Parsed file not found for document ID: {document_id}. Please parse the document first.")
-            raise FileNotFoundError(f"请先对文档ID {document_id} 进行解析处理")
+            self._handle_missing_parsed_file(document_id)
         
-        self.logger.debug(f"Loading parsed file: {parsed_file}")
-        with open(parsed_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # Load and process the parsed file
+        return self._process_parsed_file(parsed_file, document_id)
+    
+    def _handle_missing_parsed_file(self, document_id: str) -> None:
+        """Handle the case when a parsed file is not found"""
+        # Collect all locations where we searched
+        search_paths = [
+            self.parsed_dir,
+            os.path.join(self.storage_dir, 'backend', '03-parsed-docs'),
+            os.path.join(self.storage_dir, '03-parsed-docs'),
+            os.path.join(self.storage_dir, 'backend/03-parsed-docs')
+        ]
         
-        text_chunks = self._extract_text_chunks_from_content(data.get('content', {}))
+        # Build detailed error message
+        error_msg = self._build_missing_file_error_message(document_id, search_paths)
+        self.logger.error(error_msg)
         
-        self.logger.debug(f"Extracted {len(text_chunks)} text chunks for embedding")
+        # Raise exception with user-friendly message
+        raise FileNotFoundError(f"请先对文档ID {document_id} 进行解析处理 (Please process document ID {document_id} first)")
+    
+    def _build_missing_file_error_message(self, document_id: str, search_paths: List[str]) -> str:
+        """Build a detailed error message for missing parsed file"""
+        error_msg = f"Parsed file not found for document ID: {document_id}. Please parse the document first.\n"
+        error_msg += "Locations searched:\n"
         
-        if not text_chunks:
-            self.logger.error("No text chunks found for embedding")
-            raise ValueError("没有提取到可嵌入的文本块")
+        for path in search_paths:
+            if os.path.exists(path):
+                error_msg += f" - {path} (exists)\n"
+                # Show sample files from the directory
+                try:
+                    files = os.listdir(path)
+                    error_msg += f"   Files in directory ({len(files)} total):\n"
+                    for i, f in enumerate(files[:5]):  # Show only first 5 files
+                        error_msg += f"   - {f}\n"
+                    if len(files) > 5:
+                        error_msg += f"   - ... and {len(files) - 5} more files\n"
+                except Exception as e:
+                    error_msg += f"   Error listing files: {str(e)}\n"
+            else:
+                error_msg += f" - {path} (does not exist)\n"
+        
+        return error_msg
+    
+    def _process_parsed_file(self, parsed_file: str, document_id: str) -> List[Dict[str, Any]]:
+        """Process the parsed file and extract text chunks"""
+        try:
+            self.logger.debug(f"Loading parsed file: {parsed_file}")
+            with open(parsed_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
             
-        return text_chunks
+            # Extract text chunks from the content
+            text_chunks = self._extract_text_chunks_from_content(data.get('content', {}))
+            self.logger.debug(f"Extracted {len(text_chunks)} text chunks for embedding")
+            
+            # Add document_id to each chunk's metadata for traceability
+            for chunk in text_chunks:
+                if 'metadata' in chunk:
+                    chunk['metadata']['document_id'] = document_id
+            
+            # Validate we have chunks to process
+            if not text_chunks:
+                self.logger.error("No text chunks found for embedding")
+                raise ValueError("没有提取到可嵌入的文本块 (No text chunks extracted for embedding)")
+                
+            return text_chunks
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Error parsing JSON from file {parsed_file}: {str(e)}")
+            raise ValueError(f"解析文件格式错误: {str(e)} (Error parsing JSON file)")
+        except Exception as e:
+            self.logger.error(f"Error processing parsed file {parsed_file}: {str(e)}")
+            raise ValueError(f"处理解析文件时出错: {str(e)} (Error processing parsed file)")
     
     def _extract_text_chunks_from_content(self, content) -> List[Dict[str, Any]]:
         """从内容中提取文本块"""
@@ -674,25 +733,70 @@ class EmbedService:
         return None
 
     def _find_parsed_file(self, document_id: str) -> Optional[str]:
-        """查找指定文档的解析文件"""
-        self.logger.debug(f"Searching for parsed file for document ID: {document_id} in {self.parsed_dir}")
-        if os.path.exists(self.parsed_dir):
-            for filename in os.listdir(self.parsed_dir):
-                if filename.endswith("_parsed.json") and document_id in filename:
-                    # Check if this is actually the correct document by examining the file structure
-                    # Files are named as: {document_name}_{document_id}_{timestamp}_parsed.json
-                    # or: {document_id}_{timestamp}_parsed.json (legacy format)
-                    parts = filename.replace("_parsed.json", "").split("_")
-                    
-                    # Check if document_id appears in the filename parts
-                    if document_id in parts:
-                        self.logger.debug(f"Found parsed file: {filename}")
-                        return os.path.join(self.parsed_dir, filename)
-                    
-                    # Also check if document_id appears anywhere in the filename (more flexible search)
-                    if document_id in filename:
-                        self.logger.debug(f"Found parsed file (flexible match): {filename}")
-                        return os.path.join(self.parsed_dir, filename)
-                        
-        self.logger.warning(f"Parsed file for document ID: {document_id} not found in {self.parsed_dir}")
+        """Find the parsed file for a document by ID"""
+        self.logger.debug(f"Searching for parsed file for document ID: {document_id}")
+        
+        # Get all search paths
+        search_paths = self._get_parsed_file_search_paths()
+        
+        # Log the search paths
+        self._log_search_paths(search_paths)
+        
+        # Try to find the file in each path
+        return self._search_in_all_paths(search_paths, document_id)
+    
+    def _get_parsed_file_search_paths(self) -> List[str]:
+        """Get all possible paths where parsed files might be located"""
+        return [
+            self.parsed_dir,                                               # Primary path
+            os.path.join(self.storage_dir, 'backend', '03-parsed-docs'),   # Backend folder path
+            os.path.join(self.storage_dir, '03-parsed-docs'),              # Root directory path
+            os.path.join(self.storage_dir, 'backend/03-parsed-docs'),      # Alt path format
+            os.path.join(os.path.dirname(__file__), '../../../../backend/03-parsed-docs')  # Absolute path
+        ]
+    
+    def _log_search_paths(self, search_paths: List[str]) -> None:
+        """Log all search paths and whether they exist"""
+        for i, path in enumerate(search_paths):
+            self.logger.debug(f"Search path {i+1}: {path}")
+            if os.path.exists(path):
+                self.logger.debug(f"Path {i+1} exists")
+            else:
+                self.logger.debug(f"Path {i+1} does NOT exist")
+    
+    def _search_in_all_paths(self, search_paths: List[str], document_id: str) -> Optional[str]:
+        """Search for the parsed file in all given paths"""
+        for path in search_paths:
+            result = self._search_in_directory(path, document_id)
+            if result:
+                return result
+                
+        self.logger.warning(f"Parsed file for document ID: {document_id} not found in any searched location")
         return None
+    
+    def _search_in_directory(self, directory: str, document_id: str) -> Optional[str]:
+        """Search for a parsed file in a specific directory"""
+        if not os.path.exists(directory):
+            return None
+            
+        self.logger.debug(f"Searching in: {directory}")
+        
+        for filename in os.listdir(directory):
+            if self._is_matching_parsed_file(filename, document_id):
+                self.logger.info(f"Found parsed file: {filename}")
+                return os.path.join(directory, filename)
+                
+        return None
+    
+    def _is_matching_parsed_file(self, filename: str, document_id: str) -> bool:
+        """Check if a filename matches our parsed file pattern and document ID"""
+        # First check if this is a parsed file and contains the document ID
+        if not filename.endswith("_parsed.json") or document_id not in filename:
+            return False
+            
+        # Files are named as: {document_name}_{document_id}_{timestamp}_parsed.json
+        # or: {document_id}_{timestamp}_parsed.json (legacy format)
+        parts = filename.replace("_parsed.json", "").split("_")
+        
+        # If document_id is one of the parts, this is a match
+        return document_id in parts

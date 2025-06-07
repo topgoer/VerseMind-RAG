@@ -35,7 +35,7 @@ def cleanup_all_test_files():
     
     # After all tests, clean up all test files
     print("\nCleaning up all test files after test session...")
-    count, files = cleanup_test_files()
+    count, _ = cleanup_test_files()
     if count > 0:
         print(f"Cleaned {count} test files.")
     else:

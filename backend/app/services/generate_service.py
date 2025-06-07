@@ -43,7 +43,7 @@ class GenerateService:
             
     def _check_supports_vision(self, model: str) -> bool:
         """检查模型是否支持视觉功能（根据config.toml中的配置）"""
-        print(f"[DEBUG] Checking vision support for model: {model}")
+        logger.debug(f"Checking vision support for model: {model}")
         return self._get_model_config_property(model, "supports_vision", False)
 
     def _get_model_config_property(self, model: str, property_name: str, default_value: Any = None) -> Any:
@@ -51,7 +51,7 @@ class GenerateService:
         model_config = self._find_model_config(model)
         if model_config:
             return model_config.get(property_name, default_value)
-        print(f"[DEBUG] No configuration found for model {model}, using default value for {property_name}")
+        logger.debug(f"No configuration found for model {model}, using default value for {property_name}")
         return default_value
 
     def _find_model_config(self, model: str) -> Optional[Dict[str, Any]]:
@@ -71,7 +71,7 @@ class GenerateService:
         if config_from_oldstyle:
             return config_from_oldstyle
             
-        print(f"[DEBUG] No configuration found for model {model}")
+        logger.debug(f"No configuration found for model {model}")
         return None
         
     def _check_main_llm_section(self, model: str) -> Optional[Dict[str, Any]]:
@@ -79,7 +79,7 @@ class GenerateService:
         if 'llm' in self.config and isinstance(self.config['llm'], dict):
             llm_section = self.config['llm']
             if llm_section.get("model") == model:
-                print(f"[DEBUG] Model {model} found in main llm section")
+                logger.debug(f"Model {model} found in main llm section")
                 return llm_section
         return None
         
@@ -94,10 +94,10 @@ class GenerateService:
                 continue
                 
             config_model = subsection_cfg.get("model")
-            print(f"[DEBUG] Checking config subsection: llm.{subsection_key}, model: {config_model}")
+            logger.debug(f"Checking config subsection: llm.{subsection_key}, model: {config_model}")
             
             if config_model == model:
-                print(f"[DEBUG] Model {model} found in section llm.{subsection_key}")
+                logger.debug(f"Model {model} found in section llm.{subsection_key}")
                 return subsection_cfg
         return None
         

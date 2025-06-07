@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { getLogger } from '../../utils/logger';
+
+const logger = getLogger('ChunkFileModule');
 
 function ChunkFileModule({ 
   documents, 
@@ -19,12 +22,12 @@ function ChunkFileModule({
 
   useEffect(() => {
     // Log for debugging
-    // console.log('[ChunkFileModule] Documents available:', documents?.length || 0);
-    // console.log('[ChunkFileModule] Selected document:', selectedDocumentObject);
+    logger.debug('Documents available:', documents?.length || 0);
+    logger.debug('Selected document:', selectedDocumentObject);
     
     if (!selectedDocumentObject && documents && documents.length > 0 && onDocumentSelect) {
       // Auto-select the first document
-      // console.log('[ChunkFileModule] Auto-selecting first document:', documents[0].id);
+      logger.debug('Auto-selecting first document:', documents[0].id);
       onDocumentSelect(documents[0].id);
     }
   }, [selectedDocumentObject, documents, onDocumentSelect]);
@@ -32,19 +35,19 @@ function ChunkFileModule({
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedDocumentObject?.id) {
-      console.warn("Submit prevented: No document selected via props.");
+      logger.warn("Submit prevented: No document selected via props.");
       return;
     }
     if (typeof onChunkDocument === 'function') {
       onChunkDocument(selectedDocumentObject.id, strategy, chunkSize, overlap)
         .then((result) => {
-          // console.log('分块成功:', result);
+          logger.debug('分块成功:', result);
         })
         .catch((err) => {
-          console.error('分块失败:', err);
+          logger.error('分块失败:', err);
         });
     } else {
-      console.error("onChunkDocument prop is not a function. Received:", onChunkDocument);
+      logger.error("onChunkDocument prop is not a function. Received:", onChunkDocument);
     }
   };
 
@@ -65,12 +68,12 @@ function ChunkFileModule({
               value={selectedDocumentObject?.id || ''}
               onChange={(e) => {
                 const docId = e.target.value;
-                // console.log(`[ChunkFileModule] Selected document ID from dropdown: ${docId}`);
+                logger.debug(`Selected document ID from dropdown: ${docId}`);
                 
                 if (typeof onDocumentSelect === 'function') {
                   onDocumentSelect(docId);
                 } else {
-                  console.error("onDocumentSelect prop is not a function. Received:", onDocumentSelect);
+                  logger.error("onDocumentSelect prop is not a function. Received:", onDocumentSelect);
                 }
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
@@ -80,7 +83,7 @@ function ChunkFileModule({
               {documents && documents.length > 0 ? (
                 documents.map((doc) => (
                   <option key={doc.id} value={doc.id}>
-                    {doc.filename}
+                    {`${doc.filename} (${doc.type || t('unknownType')})`}
                   </option>
                 ))
               ) : (
@@ -186,7 +189,7 @@ function ChunkFileModule({
                     const doc = Array.isArray(documents) ? documents.find(d => d.id === chunk.document_id) : null;
                     // Determine the best name to display
                     const displayName = chunk.document_name || (doc ? doc.filename : chunk.document_id);
-                    // console.log(`[ChunkFileModule] Chunk display info: id=${chunk.id}, document_name=${chunk.document_name}, document_id=${chunk.document_id}`);
+                    logger.debug(`Chunk display info: id=${chunk.id}, document_name=${chunk.document_name}, document_id=${chunk.document_id}`);
                     
                     return (
                       <tr key={chunk.id} className="hover:bg-gray-50">
@@ -218,7 +221,7 @@ function ChunkFileModule({
                               if (typeof onChunkDelete === 'function') {
                                 onChunkDelete(chunk.id);
                               } else {
-                                console.error("onChunkDelete prop is not a function. Received:", onChunkDelete);
+                                logger.error("onChunkDelete prop is not a function. Received:", onChunkDelete);
                               }
                             }} 
                             className="text-red-600 hover:text-red-900"
@@ -252,7 +255,8 @@ ChunkFileModule.propTypes = {
   documents: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string.isRequired,
-      filename: PropTypes.string.isRequired
+      filename: PropTypes.string.isRequired,
+      type: PropTypes.string, // Document type from backend
     })
   ),
   chunks: PropTypes.arrayOf(
@@ -270,7 +274,8 @@ ChunkFileModule.propTypes = {
   onChunkDelete: PropTypes.func,
   selectedDocumentObject: PropTypes.shape({
     id: PropTypes.string,
-    filename: PropTypes.string
+    filename: PropTypes.string,
+    type: PropTypes.string
   }),
   onDocumentSelect: PropTypes.func
 };

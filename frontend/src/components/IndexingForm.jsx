@@ -1,7 +1,7 @@
 const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedEmbedding || !indexType) {
-      // console.log("Missing required fields:", { selectedEmbedding, indexType });
+      logger.debug("Missing required fields:", { selectedEmbedding, indexType });
       return;
     }
     
@@ -9,7 +9,7 @@ const handleSubmit = async (e) => {
       // console.log("Starting index creation with:", { selectedEmbedding, indexType });
       // Find the document_id associated with the selected embedding_id
       const embeddingInfo = embeddings.find(emb => emb.embedding_id === selectedEmbedding);
-      // console.log("Found embedding info:", embeddingInfo);
+      logger.debug("Found embedding info:", embeddingInfo);
       
       if (!embeddingInfo) {
         throw new Error("Selected embedding not found");
@@ -25,7 +25,7 @@ const handleSubmit = async (e) => {
       
       const finalCollectionName = collectionName || `col_${embeddingInfo.document_id.substring(0, 10)}`;
       const result = await onCreateIndex(embeddingInfo.document_id, indexType, selectedEmbedding, finalCollectionName);
-      // console.log("Index creation result:", result);
+      logger.debug("Index creation result:", result);
       setIndexResult(result);
     } catch (err) {
       // 错误已在 App.jsx 中处理

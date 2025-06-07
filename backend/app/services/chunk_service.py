@@ -23,13 +23,21 @@ from app.services.parse_service import ParseService
 class ChunkService:
     """文档分块服务，支持按字数、段落、标题等策略进行切分"""
     
-    def __init__(self, documents_dir="01-loaded_docs", chunks_dir="02-chunked-docs"):  # Keep using the original directory structure
+    def __init__(self, documents_dir=None, chunks_dir=None):
         self.logger = get_logger_with_env_level("ChunkService")
         
-        self.documents_dir = documents_dir
-        self.chunks_dir = chunks_dir
-        os.makedirs(self.documents_dir, exist_ok=True)  # Ensure documents_dir also exists
+        # Use project root to make all paths absolute
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        
+        # Use absolute paths with backend prefix
+        self.documents_dir = documents_dir or str(project_root / 'backend' / '01-loaded_docs')
+        self.chunks_dir = chunks_dir or str(project_root / 'backend' / '02-chunked-docs')
+        
+        os.makedirs(self.documents_dir, exist_ok=True)
         os.makedirs(self.chunks_dir, exist_ok=True)
+        
+        self.logger.debug(f"ChunkService initialized with documents_dir={self.documents_dir}, chunks_dir={self.chunks_dir}")
         
         # Initialize ParseService for automatic parsing after chunking
         self.parse_service = ParseService()
@@ -206,14 +214,28 @@ class ChunkService:
         
         # 查找文档路径
         document_path = self._find_document_path(document_id)
-        
-        # 读取文档内容
+
+        # 根据文件类型分块
         file_ext = os.path.splitext(document_path)[1].lower()
-        text_content = self._extract_text(document_path, file_ext)
-        
-        # 根据策略分块
-        chunks = self._apply_chunking_strategy(strategy, text_content, chunk_size, overlap)
-        
+        if file_ext == '.csv':
+            self.logger.debug(f"[ChunkService] Chunking CSV rows for document: {document_id}")
+            import csv
+            with open(document_path, newline='', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                rows = list(reader)
+            chunks = []
+            for i in range(0, len(rows), chunk_size):
+                chunk_rows = rows[i:i + chunk_size]
+                chunks.append({
+                    "content": chunk_rows,
+                    "start_row": i,
+                    "end_row": i + len(chunk_rows)
+                })
+        else:
+            # 读取文本内容并使用策略分块
+            text_content = self._extract_text(document_path, file_ext)
+            chunks = self._apply_chunking_strategy(strategy, text_content, chunk_size, overlap)
+
         # 生成唯一ID和时间戳
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         chunk_id = str(uuid.uuid4())[:8]
@@ -398,6 +420,9 @@ class ChunkService:
         # Check if chunks directory exists
         if not os.path.exists(self.chunks_dir):
             self.logger.warning(f"Chunks directory does not exist: {self.chunks_dir}")
+            # Log the absolute path for clarity
+            abs_path = os.path.abspath(self.chunks_dir)
+            self.logger.warning(f"Absolute path of missing chunks directory: {abs_path}")
             return []
         
         # Get list of all files in the chunks directory
@@ -832,6 +857,14 @@ class ChunkService:
             return self._extract_text_from_docx(file_path)
         elif file_ext in ['.txt', '.md']:
             return self._extract_text_from_text_file(file_path)
+        elif file_ext == '.csv':
+            self.logger.debug("Extracting text content from CSV file")
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    return f.read()
+            except Exception as e:
+                self.logger.error(f"Failed to read CSV file: {e}")
+                raise IOError(f"CSV文件读取失败: {e}")
         else:
             raise ValueError(f"不支持的文件类型: {file_ext}")
     

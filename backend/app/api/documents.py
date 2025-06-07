@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from typing import List, Optional
 import os
 import logging
@@ -21,7 +21,7 @@ async def upload_document(
     上传文档文件（PDF、DOCX、TXT、Markdown）
     """
     # 检查文件类型
-    allowed_extensions = [".pdf", ".docx", ".txt", ".md"]
+    allowed_extensions = [".pdf", ".docx", ".txt", ".md", ".csv"]
     file_ext = os.path.splitext(file.filename)[1].lower()
     
     if file_ext not in allowed_extensions:
@@ -81,3 +81,16 @@ async def delete_document(document_id: str):
     
     logger.info(f"Document with ID {document_id} successfully deleted")
     return {"message": f"文档 {document_id} 已成功删除"}
+
+# New endpoint to download documents
+@router.get("/{document_id}/download")
+async def download_document(document_id: str):
+    """
+    Download a document by ID
+    """
+    document = load_service.get_document_by_id(document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    file_path = document["path"]
+    filename = document["filename"]
+    return FileResponse(path=file_path, media_type="application/octet-stream", filename=filename)

@@ -171,6 +171,8 @@ MainContent.propTypes = {
   documents: PropTypes.array.isRequired,
   embeddings: PropTypes.array.isRequired,
   chunks: PropTypes.array.isRequired,
+  chunksLoading: PropTypes.bool,
+  chunksError: PropTypes.string,
   indices: PropTypes.array.isRequired,
   searchResults: PropTypes.object,
   generatedText: PropTypes.string,

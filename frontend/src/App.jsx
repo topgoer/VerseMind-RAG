@@ -219,21 +219,24 @@ const addToGlobalLookup = (searchId, documentName, collectionName, indexId) => {
         }
       }
       
-      // console.log(`Added document info to global lookup for search ID ${searchId}: "${documentName}"`);
+      logger.debug(`Added document info to global lookup for search ID ${searchId}: "${documentName}"`);
     }
   } catch (err) {
-    console.error("Failed to add to global document lookup:", err);
+    logger.error("Failed to add to global document lookup:", err);
   }
 };
+
+import logger from './utils/logger';
 
 function App() {
   const { t, language } = useLanguage();
   const [activeModule, setActiveModule] = useState('chat');
+  const [currentSearchResult, setCurrentSearchResult] = useState(null);
   
   // Expose setActiveModule to window object for cross-component navigation
   useEffect(() => {
     window.setActiveModule = (moduleName) => {
-      // console.log(`[App] Setting active module to: ${moduleName}`);
+      logger.debug(`Setting active module to: ${moduleName}`);
       setActiveModule(moduleName);
     };
     
@@ -243,37 +246,52 @@ function App() {
     };
   }, []);
   
+  // Helper function to clean up all message blob URLs
+  const cleanupAllMessageUrls = (messages) => {
+    if (!messages) return messages;
+    
+    if (Array.isArray(messages)) {
+      messages.forEach(message => {
+        try {
+          // Clean up user uploaded images
+          if (message?.image?.startsWith?.('blob:')) {
+            URL.revokeObjectURL(message.image);
+          }
+          
+          // Clean up AI generated images if they're blob URLs
+          if (message?.generatedImage?.startsWith?.('blob:')) {
+            URL.revokeObjectURL(message.generatedImage);
+          }
+        } catch (err) {
+          console.error('[App] Error cleaning up message URLs:', err);
+        }
+      });
+    }
+    return messages; // Return unchanged to avoid re-render
+  };
+  
   // Clean up object URLs to prevent memory leaks
   useEffect(() => {
-    // No operation on mount
-    
     // Only in cleanup function
     return () => {
       // We need to use a function form of setChatHistory to get the latest value
-      // and clean up URLs without using chatHistory directly in the cleanup function
-      setChatHistory(currentChatHistory => {
-        // When component unmounts, clean up any object URLs
-        if (currentChatHistory) {
-          currentChatHistory.forEach(message => {
-            // Clean up user uploaded images
-            if (message?.image?.startsWith('blob:')) {
-              URL.revokeObjectURL(message.image);
-            }
-            
-            // Clean up AI generated images if they're blob URLs
-            if (message?.generatedImage?.startsWith('blob:')) {
-              URL.revokeObjectURL(message.generatedImage);
-            }
-          });
-        }
-        return currentChatHistory; // Return unchanged to avoid re-render
-      });
+      if (setChatHistory) {
+        setChatHistory(cleanupAllMessageUrls);
+      }
     };
   }, []);
   
+  // Keep the global search results variable in sync with our state
+  // Order matters - make sure this effect runs after other initialization
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.verseMindCurrentSearchResults = currentSearchResult;
+    }
+  }, [currentSearchResult]);
+  
   // 处理模块切换
   const handleModuleChange = (moduleName) => {
-    // console.log(`[App] Changing module to: ${moduleName} (via sidebar)`);
+    logger.debug(`Changing module to: ${moduleName} (via sidebar)`);
     setActiveModule(moduleName);
   };
   
@@ -283,7 +301,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log('[App] Uploading document...');
+      logger.debug('Uploading document...');
       
       // 发送POST请求到后端API
       const response = await fetch('/api/documents/upload', {
@@ -297,7 +315,7 @@ function App() {
       }
       
       const result = await response.json();
-      // console.log('[App] Document uploaded successfully:', result);
+      logger.debug('Document uploaded successfully:', result);
       
       // 添加消息通知
       setNotification({
@@ -309,13 +327,13 @@ function App() {
       setTimeout(() => setNotification({ type: '', message: '' }), 3000);
       
       // 刷新文档列表
-      // console.log(`[App] Refreshing document list after upload...`);
+      logger.debug('Refreshing document list after upload...');
       await fetchDocuments();
       
       setLoading(false);
       return result;
     } catch (err) {
-      console.error('[App] Document upload error:', err);
+      logger.error('Document upload error:', err);
       setError(err.message);
       setLoading(false);
       
@@ -338,7 +356,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Chunking document ${documentId} with strategy ${strategy}...`);
+      logger.debug(`Chunking document ${documentId} with strategy ${strategy}...`);
       
       // Additional validation
       if (!documentId) {
@@ -348,8 +366,8 @@ function App() {
       // Check if document exists in our documents list
       const documentExists = documents.some(doc => doc.id === documentId);
       if (!documentExists) {
-        console.warn(`[App] Warning: Attempting to chunk document ${documentId} that is not in the documents list`);
-        // console.log('[App] Available documents:', documents.map(doc => ({ id: doc.id, filename: doc.filename })));
+        logger.warn(`Warning: Attempting to chunk document ${documentId} that is not in the documents list`);
+        logger.debug('Available documents:', documents.map(doc => ({ id: doc.id, filename: doc.filename })));
       }
       
       // 发送POST请求到后端API
@@ -379,7 +397,7 @@ function App() {
       }
       
       const result = await response.json();
-      // console.log('[App] Document chunking successful:', result);
+      logger.debug('Document chunking successful:', result);
       
       // 添加消息通知
       setNotification({
@@ -391,21 +409,21 @@ function App() {
       setTimeout(() => setNotification({ type: '', message: '' }), 3000);
       
       // 刷新分块列表
-      // console.log('[App] Refreshing chunks list after chunking');
+      logger.debug('Refreshing chunks list after chunking');
       await fetchChunks();
       
       setLoading(false);
       return result;
     } catch (err) {
-      console.error('[App] Document chunking error:', err);
+      logger.error('Document chunking error:', err);
       
       // Enhanced error logging
-      console.error(`[App] Chunking details - Document ID: ${documentId}, Strategy: ${strategy}, ChunkSize: ${chunkSize}, Overlap: ${overlap}`);
+      logger.error(`Chunking details - Document ID: ${documentId}, Strategy: ${strategy}, ChunkSize: ${chunkSize}, Overlap: ${overlap}`);
       
       // Try to parse more detailed error information if available
       let errorMessage = err.message || 'Failed to chunk document';
       try {
-        if (err.message && err.message.includes('{')) {
+        if (err.message?.includes('{')) {
           const jsonStart = err.message.indexOf('{');
           const errorData = JSON.parse(err.message.substring(jsonStart));
           if (errorData.detail) {
@@ -413,7 +431,7 @@ function App() {
           }
         }
       } catch (parseErr) {
-        console.warn('[App] Failed to parse error details:', parseErr);
+        logger.warn('Failed to parse error details:', parseErr);
       }
       
       setError(errorMessage);
@@ -438,7 +456,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Deleting chunk ${chunkId}...`);
+      logger.debug(`Deleting chunk ${chunkId}...`);
       
       // 发送DELETE请求到后端API
       const response = await fetch(`/api/chunks/${chunkId}`, {
@@ -450,7 +468,7 @@ function App() {
         throw new Error(errorData.message || 'Failed to delete chunk');
       }
       
-      // console.log('[App] Chunk deletion successful');
+      logger.debug('Chunk deletion successful');
       
       // 添加消息通知
       setNotification({
@@ -489,7 +507,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Parsing document ${documentId}...`);
+      logger.debug(`Parsing document ${documentId}...`);
       
       // 发送POST请求到后端API
       const response = await fetch('/api/parse/create', {
@@ -511,7 +529,7 @@ function App() {
       }
       
       const result = await response.json();
-      // console.log('[App] Document parsing successful:', result);
+      logger.debug('Document parsing successful:', result);
       
       // 添加消息通知
       setNotification({
@@ -548,11 +566,11 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Creating embeddings for document ${documentId}...`);
+      logger.debug(`Creating embeddings for document ${documentId}...`);
       
       // 发送POST请求到后端API
       const API_URL = '/api/embeddings/create';
-      // console.log(`[App] Sending POST to ${API_URL} with provider=${provider}, model=${model}`);
+      logger.debug(`Sending POST to ${API_URL} with provider=${provider}, model=${model}`);
       
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -586,7 +604,7 @@ function App() {
       }
       
       const result = await response.json();
-      // console.log('[App] Embeddings creation successful:', result);
+      logger.debug('Embeddings creation successful:', result);
       
       // 添加消息通知
       setNotification({
@@ -626,7 +644,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Deleting embedding ${embeddingId}...`);
+      logger.debug(`Deleting embedding ${embeddingId}...`);
       
       // 发送DELETE请求到后端API
       const response = await fetch(`/api/embeddings/${embeddingId}`, {
@@ -638,7 +656,7 @@ function App() {
         throw new Error(errorData.message || 'Failed to delete embedding');
       }
       
-      // console.log('[App] Embedding deletion successful');
+      logger.debug('Embedding deletion successful');
       
       // 添加消息通知
       setNotification({
@@ -679,7 +697,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log('[App] Fetching embeddings...');
+      logger.debug('Fetching embeddings...');
       
       // 发送GET请求到后端API
       const response = await fetch('/api/embeddings/list');
@@ -687,7 +705,7 @@ function App() {
       if (!response.ok) {
         // Don't treat 404 (not found) as an error for empty embedding folder
         if (response.status === 404) {
-          // console.log('[App] No embeddings found (404)');
+          logger.debug('No embeddings found (404)');
           setEmbeddings([]);
           setLoading(false);
           return [];
@@ -708,15 +726,15 @@ function App() {
         result = await response.json();
         // Validate that result is an array
         if (!Array.isArray(result)) {
-          console.warn('[App] Embeddings result is not an array:', result);
+          logger.warn('Embeddings result is not an array:', result);
           result = [];
         }
       } catch (parseError) {
-        console.error('[App] Error parsing embeddings response:', parseError);
+        logger.error('Error parsing embeddings response:', parseError);
         result = [];
       }
       
-      // console.log('[App] Fetched embeddings:', result.length);
+      logger.debug(`Fetched embeddings: ${result.length}`);
       
       setEmbeddings(result);
       setLoading(false);
@@ -736,7 +754,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Creating index for document ${documentId} with embedding ${embeddingId}...`);
+      logger.debug(`Creating index for document ${documentId} with embedding ${embeddingId}...`);
       
       // 发送POST请求到后端API
       const response = await fetch('/api/indices/create', {
@@ -759,7 +777,7 @@ function App() {
       }
       
       const result = await response.json();
-      // console.log('[App] Index creation successful:', result);
+      logger.debug('Index creation successful:', result);
       
       // 添加消息通知
       setNotification({
@@ -799,7 +817,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log('[App] Fetching indices...');
+      logger.debug('Fetching indices...');
       
       // 发送GET请求到后端API
       const response = await fetch('/api/indices/list', {
@@ -810,7 +828,7 @@ function App() {
         },
       });
       
-      // console.log('[App] API response status:', response.status);
+      logger.debug(`API response status: ${response.status}`);
       
       if (!response.ok) {
         let errorMessage = 'Failed to fetch indices';
@@ -825,24 +843,24 @@ function App() {
       }
       
       const result = await response.json();
-      // console.log('[App] Fetched indices:', result);
+      logger.debug('Fetched indices:', result);
       
       // Debug: Log collection names from the response
       if (Array.isArray(result)) {
         const collections = [...new Set(result
           .filter(idx => idx?.collection_name)
           .map(idx => idx.collection_name))];
-        // console.log('[App] Collection names found in API response:', collections);
-        // console.log('[App] Total indices found:', result.length);
+        logger.debug('Collection names found in API response:', collections);
+        logger.debug(`Total indices found: ${result.length}`);
         
         // Log the first index to see its structure
         if (result.length > 0) {
-          // console.log('[App] First index structure:', result[0]);
+          logger.debug('First index structure:', result[0]);
         } else {
-          console.warn('[App] No indices found in the API response');
+          logger.warn('No indices found in the API response');
         }
       } else {
-        console.error('[App] API response is not an array:', result);
+        logger.error('API response is not an array:', result);
       }
       
       // 将索引信息保存到全局变量，以供文档名称解析使用
@@ -867,17 +885,22 @@ function App() {
   // 获取文档列表
   const fetchDocuments = async () => {
     try {
-      // console.log('[App] Fetching documents list...');
+      logger.debug('Fetching documents list...');
       const response = await fetch('/api/documents/list');
       
       if (!response.ok) {
         throw new Error(`Failed to fetch documents: ${response.status} ${response.statusText}`);
       }
       
-      const data = await response.json();
-      // console.log(`[App] Fetched ${data.length} documents`);
-      setDocuments(data);
-      return data;
+      const raw = await response.json();
+      logger.debug(`Fetched ${raw.length} documents`);
+      // Map backend file_type to front-end type property
+      const docsWithType = raw.map(doc => ({
+        ...doc,
+        type: doc.file_type
+      }));
+      setDocuments(docsWithType);
+      return docsWithType;
     } catch (err) {
       console.error('[App] Error fetching documents:', err);
       // Don't override existing errors from other operations
@@ -894,7 +917,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Deleting index ${indexId}...`);
+      logger.debug(`Deleting index ${indexId}...`);
       
       // 发送DELETE请求到后端API
       const response = await fetch(`/api/indices/${indexId}`, {
@@ -906,7 +929,7 @@ function App() {
         throw new Error(errorData.message || 'Failed to delete index');
       }
       
-      // console.log('[App] Index deletion successful');
+      logger.debug('Index deletion successful');
       
       // 添加消息通知
       setNotification({
@@ -941,24 +964,14 @@ function App() {
     }
   };
   
-  // Get list of document IDs that have been chunked
-  const getChunkedDocumentIds = () => {
-    if (!Array.isArray(chunks)) return [];
-    
-    // Extract unique document IDs from chunks
-    const docIds = [...new Set(chunks.map(chunk => chunk.document_id))];
-    // console.log(`[App] Found ${docIds.length} chunked document IDs`);
-    return docIds;
-  };
-  
   // 处理文档删除
   const handleDocumentDelete = async (documentId) => {
     try {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Deleting document ${documentId}...`);
-      // console.log(`[App] Current documents before deletion:`, documents.length);
+      logger.debug(`Deleting document ${documentId}...`);
+      logger.debug(`Current documents before deletion: ${documents.length}`);
       
       // 发送DELETE请求到后端API
       const response = await fetch(`/api/documents/${documentId}`, {
@@ -967,16 +980,17 @@ function App() {
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[App] Document deletion API error (${response.status}):`, errorText);
+        logger.error(`Document deletion API error (${response.status}):`, errorText);
         try {
           const errorData = JSON.parse(errorText);
           throw new Error(errorData.detail || errorData.message || 'Failed to delete document');
         } catch (parseError) {
+          logger.warn('Failed to parse error response as JSON:', parseError.message);
           throw new Error(`Failed to delete document: ${response.status} ${errorText || response.statusText}`);
         }
       }
       
-      // console.log('[App] Document deletion successful');
+      logger.debug('Document deletion successful');
       
       // 添加消息通知
       setNotification({
@@ -1002,7 +1016,7 @@ function App() {
       );
       
       // Refresh document list to ensure UI is up to date
-      // console.log(`[App] Refreshing document list after deletion...`);
+      logger.debug('Refreshing document list after deletion...');
       await fetchDocuments();
       
       setLoading(false);
@@ -1032,7 +1046,7 @@ function App() {
       
       // If a collection was specified, modify the search logic
       if (collectionName) {
-        // console.log(`[App] Searching collection ${collectionName} for "${query}"...`);
+        logger.debug(`Searching collection ${collectionName} for "${query}"...`);
         
         // Get indices belonging to this collection
         const collectionIndices = indices.filter(idx => idx.collection_name === collectionName);
@@ -1042,7 +1056,7 @@ function App() {
         }
         
         // Use the first index as a starting point (or the selected index if provided)
-        const targetIndexId = indexId || collectionIndices[0].index_id;
+        // const targetIndexId = indexId || collectionIndices[0].index_id;
         
         // Send POST request with the collection name as the index_id_or_collection parameter
         const response = await fetch('/api/search', {
@@ -1065,7 +1079,7 @@ function App() {
         }
         
         const result = await response.json();
-        // console.log('[App] Collection search successful:', result);
+        logger.debug('Collection search successful:', result);
         
         // Add collection name to the result for UI display
         result.collectionName = collectionName;
@@ -1082,13 +1096,12 @@ function App() {
         
         // 保存搜索结果
         setSearchResults(result);
-        setCurrentSearchResult(result);
         
         setLoading(false);
         return result;
       } else {
         // Original single-index search logic
-        // console.log(`[App] Searching index ${indexId} for "${query}"...`);
+        logger.debug(`Searching index ${indexId} for "${query}"...`);
         
         // 发送POST请求到后端API
         const response = await fetch('/api/search', {
@@ -1111,7 +1124,7 @@ function App() {
         }
         
         const result = await response.json();
-        // console.log('[App] Search successful:', result);
+        logger.debug('Search successful:', result);
         
         // 添加消息通知
         const resultCount = result.results?.length || 0;
@@ -1125,7 +1138,6 @@ function App() {
         
         // 保存搜索结果
         setSearchResults(result);
-        setCurrentSearchResult(result);
         
         setLoading(false);
         return result;
@@ -1154,7 +1166,7 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // console.log(`[App] Generating text for search ${searchId} with model ${model}...`);
+      logger.debug(`Generating text for search ${searchId} with model ${model}...`);
       
       // 发送POST请求到后端API
       const response = await fetch('/api/generate', {
@@ -1178,7 +1190,7 @@ function App() {
       }
       
       const result = await response.json();
-      // console.log('[App] Text generation successful:', result);
+      logger.debug('Text generation successful:', result);
       
       // 添加消息通知
       setNotification({
@@ -1220,96 +1232,146 @@ function App() {
       if (document) {
         setSelectedDocument(document);
         setSelectedDocumentId(document.id);
-        // console.log(`[App] Selected document by ID: ${document.id} (${document.filename})`);
+        logger.debug(`Selected document by ID: ${document.id} (${document.filename})`);
       } else {
-        console.error(`[App] Could not find document with ID: ${documentOrId}`);
+        logger.error(`Could not find document with ID: ${documentOrId}`);
       }
     } else {
       // Handle document object directly
       setSelectedDocument(documentOrId);
       setSelectedDocumentId(documentOrId?.id || null);
-      // console.log(`[App] Selected document: ${documentOrId?.id || 'none'}`);
+      logger.debug(`Selected document: ${documentOrId?.id || 'none'}`);
     }
   };
   
+  // Helper function to create user message
+  const createUserMessage = (message, selectedImage) => {
+    const userMessage = {
+      sender: 'user',
+      text: message,
+      timestamp: new Date().toLocaleString(),
+      id: `user-${Date.now()}`
+    };
+    
+    if (selectedImage) {
+      userMessage.image = URL.createObjectURL(selectedImage);
+    }
+    
+    return userMessage;
+  };
+
+  // Helper function to perform search
+  const performSearch = async (indexId, message, searchParams) => {
+    if (!indexId) return { searchResult: null, documentContext: null };
+
+    const topK = searchParams.topK || 5;
+    const similarityThreshold = searchParams.similarityThreshold || 0.7;
+    const inputType = searchParams.inputType || 'index_id';
+    
+    logger.debug(`Searching with ${inputType === 'collection_name' ? 'collection' : 'index'} ${indexId} for relevant information...`);
+    
+    const searchResponse = await fetch('/api/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        index_id_or_collection: indexId,
+        query: message,
+        top_k: topK,
+        similarity_threshold: similarityThreshold
+      }),
+    });
+    
+    if (!searchResponse.ok) {
+      const errorData = await searchResponse.json();
+      throw new Error(errorData.message || 'Failed to search index');
+    }
+    
+    const searchResult = await searchResponse.json();
+    
+    // Set the result in state and in a global window variable for components that need it
+    setCurrentSearchResult(searchResult);
+    if (typeof window !== 'undefined') {
+      window.verseMindCurrentSearchResults = searchResult;
+    }
+    
+    let documentContext = null;
+    if (searchResult) {
+      const indexInfo = indices.find(idx => idx.index_id === indexId);
+      documentContext = {
+        searchId: searchResult.search_id,
+        documentName: indexInfo?.document_filename || indexInfo?.collection_name || indexId,
+        indexInfo: indexInfo,
+        rawSearchData: searchResult,
+        similarities: searchResult.results?.map(r => r.similarity).filter(Boolean)
+      };
+    }
+    
+    return { searchResult, documentContext };
+  };
+
+  // Helper function to convert image to base64
+  const convertImageToBase64 = async (selectedImage) => {
+    if (!selectedImage) return null;
+
+    try {
+      const reader = new FileReader();
+      const imageData = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(selectedImage);
+      });
+      
+      return imageData.split(',')[1]; // Extract base64 part
+    } catch (imgErr) {
+      console.error('[App] Error processing image:', imgErr);
+      return null;
+    }
+  };
+
+  // Helper function to create AI message
+  const createAIMessage = (generateResult, searchResult, documentContext, selectedImage) => {
+    const aiMessage = {
+      sender: 'ai',
+      text: generateResult.generated_text,
+      originalContent: generateResult.generated_text,
+      timestamp: new Date().toLocaleString(),
+      model: generateResult.model,
+      id: `ai-${Date.now()}`,
+      search_id: searchResult?.search_id,
+      documentContext: documentContext
+    };
+    
+    if (generateResult.generated_image) {
+      aiMessage.generatedImage = generateResult.generated_image;
+    }
+    
+    if (selectedImage) {
+      aiMessage.respondsToImage = true;
+    }
+    
+    return aiMessage;
+  };
+
   // 处理搜索和生成（聊天模式）
   const handleSearchAndGenerate = async (indexId, message, provider, model, selectedImage = null, searchParams = {}) => {
     try {
       setLoading(true);
       setError(null);
       
-      // Default temperature value if not provided in searchParams
       const temperature = searchParams?.temperature || 0.7;
-      
-      // console.log(`[App] Processing chat message: "${message}" with index ${indexId}`);
+      logger.debug(`Processing chat message: "${message}" with index ${indexId}`);
       
       // 添加用户消息到聊天历史
-      const userMessage = {
-        sender: 'user',
-        text: message,
-        timestamp: new Date().toLocaleString(),
-        id: `user-${Date.now()}`
-      };
-      
-      // If there's an image, create an object URL and add it to the message
-      if (selectedImage) {
-        userMessage.image = URL.createObjectURL(selectedImage);
-      }
-      
+      const userMessage = createUserMessage(message, selectedImage);
       setChatHistory(prev => [...prev, userMessage]);
       
       // 步骤1：搜索
-      let searchResult = null;
-      let documentContext = null;
-      
-      if (indexId) {
-        // Get search parameters from searchParams or use defaults
-        const topK = searchParams.topK || 5;
-        const similarityThreshold = searchParams.similarityThreshold || 0.7;
-        const inputType = searchParams.inputType || 'index_id';
-        
-        // console.log(`[App] Searching with ${inputType === 'collection_name' ? 'collection' : 'index'} ${indexId} for relevant information...`);
-        
-        // 发送POST请求到后端API
-        const searchResponse = await fetch('/api/search', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            index_id_or_collection: indexId, // Use consistent parameter name
-            query: message,
-            top_k: topK,
-            similarity_threshold: similarityThreshold
-          }),
-        });
-        
-        if (!searchResponse.ok) {
-          const errorData = await searchResponse.json();
-          throw new Error(errorData.message || 'Failed to search index');
-        }
-        
-        searchResult = await searchResponse.json();
-        setCurrentSearchResult(searchResult);
-        
-        // 准备文档上下文信息
-        if (searchResult) {
-          // 获取索引信息
-          const indexInfo = indices.find(idx => idx.index_id === indexId);
-          
-          // 构建文档上下文
-          documentContext = {
-            searchId: searchResult.search_id,
-            documentName: indexInfo?.document_filename || indexInfo?.collection_name || indexId,
-            indexInfo: indexInfo,
-            rawSearchData: searchResult,
-            similarities: searchResult.results?.map(r => r.similarity).filter(Boolean)
-          };
-        }
-      }
+      const { searchResult, documentContext } = await performSearch(indexId, message, searchParams);
       
       // 步骤2：生成文本
-      // console.log(`[App] Generating AI response with model ${model}...`);
+      logger.debug(`Generating AI response with model ${model}...`);
       
       const generateBody = {
         prompt: message,
@@ -1318,30 +1380,14 @@ function App() {
         temperature
       };
       
-      // 如果有搜索结果，使用搜索ID
       if (searchResult?.search_id) {
         generateBody.search_id = searchResult.search_id;
       }
       
-      // If there's an image, convert it to base64 and add it to the request
-      if (selectedImage) {
-        try {
-          // Convert the image to base64
-          const reader = new FileReader();
-          // Use a promise to handle the async FileReader
-          const imageData = await new Promise((resolve, reject) => {
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error('Failed to read image file'));
-            reader.readAsDataURL(selectedImage);
-          });
-          
-          // Extract just the base64 part without the data:image prefix
-          const base64Data = imageData.split(',')[1];
-          generateBody.image_data = base64Data;
-        } catch (imgErr) {
-          console.error('[App] Error processing image:', imgErr);
-          // Continue without the image if processing fails
-        }
+      // Convert image to base64 if present
+      const base64Data = await convertImageToBase64(selectedImage);
+      if (base64Data) {
+        generateBody.image_data = base64Data;
       }
       
       // Send the generation request
@@ -1359,33 +1405,10 @@ function App() {
       }
       
       const generateResult = await generateResponse.json();
-      // console.log('[App] Generation successful:', generateResult);
+      logger.debug('Generation successful:', generateResult);
       
       // 添加AI回复到聊天历史
-      const aiMessage = {
-        sender: 'ai',
-        text: generateResult.generated_text,
-        originalContent: generateResult.generated_text, // 保存原始LLM响应，避免被后续处理破坏
-        timestamp: new Date().toLocaleString(),
-        model: generateResult.model,
-        id: `ai-${Date.now()}`,
-        search_id: searchResult?.search_id,
-        documentContext: documentContext
-      };
-      
-      // Only include generated images from the model, not the uploaded image
-      // This prevents duplicate images in the chat (following test-image-display.ps1 guidance)
-      
-      // If the model returned an image (for models that can generate images)
-      if (generateResult.generated_image) {
-        aiMessage.generatedImage = generateResult.generated_image;
-      }
-      
-      // Add a reference that this message was in response to an image
-      if (selectedImage) {
-        aiMessage.respondsToImage = true;
-      }
-      
+      const aiMessage = createAIMessage(generateResult, searchResult, documentContext, selectedImage);
       setChatHistory(prev => [...prev, aiMessage]);
       
       // 如果有搜索ID和文档名，添加到全局查找表
@@ -1428,7 +1451,6 @@ function App() {
   const [embeddings, setEmbeddings] = useState([]);
   const [indices, setIndices] = useState([]);
   const [searchResults, setSearchResults] = useState(null);
-  const [currentSearchResult, setCurrentSearchResult] = useState(null); // Store current search result with document info
   const [generatedText, setGeneratedText] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1445,9 +1467,6 @@ function App() {
   const [configLoading, setConfigLoading] = useState(true);
   const [notification, setNotification] = useState({ type: '', message: '' });
   const [selectedDocument, setSelectedDocument] = useState(null);
-  const [currentTask, setCurrentTask] = useState(null);
-  const [taskProgress, setTaskProgress] = useState('');
-  // Removed unused notificationRef
 
   // Load config and initial data
   useEffect(() => {
@@ -1459,17 +1478,15 @@ function App() {
         setConfigLoading(false);
         
         // Load indices data for collections
-        // console.log('[App] Initial load - fetching indices data...');
+        logger.debug('Initial load - fetching indices data...');
         const indicesData = await fetchIndices();
         
         // Add diagnostic info after loading indices
-        // console.log('[App] Initialization completed - indices loaded:', 
-        //   Array.isArray(indicesData) ? indicesData.length : 'none',
-        //   'collections:', 
-        //   Array.isArray(indicesData) 
-        //     ? [...new Set(indicesData.filter(i => i.collection_name).map(i => i.collection_name))]
-        //     : 'none'
-        // );
+        logger.debug(`Initialization completed - indices loaded: ${Array.isArray(indicesData) ? indicesData.length : 'none'}, collections: ${
+          Array.isArray(indicesData) 
+            ? [...new Set(indicesData.filter(i => i.collection_name).map(i => i.collection_name))].join(', ')
+            : 'none'
+        }`);
         
         // Load document list
         await fetchDocuments();
@@ -1486,7 +1503,7 @@ function App() {
   
   // Function to fetch chunks
   const fetchChunks = async () => {
-    // console.log('[App] Fetching chunks list');
+    logger.debug('Fetching chunks list');
     setChunksLoading(true); // Set loading state
     try {
       const response = await fetch('/api/chunks/list');
@@ -1494,10 +1511,10 @@ function App() {
         throw new Error(`Failed to fetch chunks: ${response.status} ${response.statusText}`);
       }
       const data = await response.json();
-      // console.log(`[App] Fetched ${data.length} chunks`);
+      logger.debug(`Fetched ${data.length} chunks`);
       setChunks(data);
     } catch (err) {
-      console.error('[App] Error fetching chunks list:', err);
+      logger.error('Error fetching chunks list:', err);
       setChunksError(err.message);
     } finally {
       setChunksLoading(false);
@@ -1507,14 +1524,14 @@ function App() {
   // Add effect to load documents when entering the document-related modules
   useEffect(() => {
     if (activeModule === 'load' || activeModule === 'chunk' || activeModule === 'parse' || activeModule === 'embedding') {
-      // console.log(`[App] Loading documents for ${activeModule} module`);
+      logger.debug(`[App] Loading documents for ${activeModule} module`);
       fetchDocuments().catch(err => {
         console.error(`[App] Error loading documents for ${activeModule} module:`, err);
       });
       
       // Fetch chunks list for several modules that need to work with chunks
       if (activeModule === 'chunk' || activeModule === 'parse' || activeModule === 'embedding') {
-        // console.log(`[App] Fetching chunks for ${activeModule} module`);
+        logger.debug(`Fetching chunks for ${activeModule} module`);
         fetchChunks();
       }
     }
@@ -1540,15 +1557,13 @@ function App() {
 
       const mainContentSeparator = '\n\n---\n';
       let mainContent = msg.text;
-      let existingFooter = '';
       const hasExistingSeparator = msg.text.includes(mainContentSeparator);
 
       if (hasExistingSeparator) {
         const parts = msg.text.split(mainContentSeparator);
         mainContent = parts[0]; // Content before the first separator
-        existingFooter = parts.slice(1).join(mainContentSeparator); // In case there are multiple separators, rejoin them
       }
-      // If no separator, mainContent remains msg.text, existingFooter remains empty.
+      // If no separator, mainContent remains msg.text.
 
       // 存储原始AI响应内容，以便在需要重新处理（如语言切换）时使用
       // 如果尚未保存，则使用当前mainContent
@@ -1668,8 +1683,6 @@ function App() {
           onDocumentSelect={handleSelectDocument}
           selectedDocumentId={selectedDocumentId}
           chatHistory={chatHistory}
-          currentTask={currentTask}
-          taskProgress={taskProgress}
           config={config}
           configLoading={configLoading}
         />

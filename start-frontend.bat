@@ -20,7 +20,7 @@ if "%MODE%"=="dev" (
     echo Building new production version...
 
     REM Build the frontend
-    call npm run build
+    call npm run build > NUL
     
     REM Preview the newly built production version
     echo Starting preview server...

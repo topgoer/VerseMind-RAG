@@ -158,6 +158,213 @@ class IndexService:
         print(f"[SERVICE LOG IndexService.__init__] - 索引元数据目录: {self.indices_dir}")
         print(f"[SERVICE LOG IndexService.__init__] - 向量数据库目录: {self.vector_db_dir}")
     
+    def _prepare_index_parameters(self, document_id: str, vector_db: str, collection_name: str, index_name: str, embedding_id: str) -> Dict[str, str]:
+        """
+        准备索引参数，设置默认值并返回规范化的参数
+        """
+        # 使用配置中的默认向量数据库类型，如果未指定
+        if vector_db is None:
+            vector_db = settings.VECTOR_STORE_TYPE
+        
+        # 如果未指定嵌入ID，则报错
+        if embedding_id is None:
+            raise ValueError("必须指定嵌入ID")
+        
+        # 如果未指定集合名称或索引名称，则自动生成
+        if collection_name is None:
+            collection_name = f"col_{document_id[:10]}"
+        if index_name is None:
+            index_name = f"idx_{embedding_id[:8]}"
+        
+        return {
+            "vector_db": vector_db,
+            "collection_name": collection_name,
+            "index_name": index_name
+        }
+
+    def _load_embeddings(self, document_id: str, embedding_id: str) -> Dict[str, Any]:
+        """
+        加载嵌入数据
+        """
+        # 检查嵌入是否存在
+        embedding_file = self._find_embedding_file(document_id, embedding_id)
+        if not embedding_file:
+            error_message = f"请先为文档ID {document_id} (使用嵌入ID: {embedding_id}) 创建嵌入向量"
+            print(f"[SERVICE ERROR IndexService._load_embeddings] {error_message}")
+            raise FileNotFoundError(error_message)
+        
+        print(f"[SERVICE LOG IndexService._load_embeddings] Found embedding file: {embedding_file}")
+        
+        # 读取嵌入数据
+        with open(embedding_file, "r", encoding="utf-8") as f:
+            embedding_data = json.load(f)
+        
+        # 提取嵌入向量
+        embeddings = embedding_data.get("embeddings", [])
+        if not embeddings:
+            raise ValueError("嵌入数据为空")
+            
+        return {
+            "embedding_data": embedding_data,
+            "embeddings": embeddings
+        }
+
+    def _create_vector_db_index(self, embeddings: List[Dict[str, Any]], vector_db: str, collection_name: str, index_name: str) -> Dict[str, Any]:
+        """
+        根据指定的向量数据库类型创建索引
+        """
+        print(f"[SERVICE LOG IndexService._create_vector_db_index] 使用向量数据库类型: {vector_db}")
+        
+        if vector_db == VectorDBProvider.FAISS.value:
+            print(f"[SERVICE LOG IndexService._create_vector_db_index] 创建FAISS索引，集合名: {collection_name}, 索引名: {index_name}")
+            index_info = self._create_faiss_index(embeddings, collection_name, index_name)
+            print(f"[SERVICE LOG IndexService._create_vector_db_index] FAISS索引创建成功: {index_info['index_path']}")
+        elif vector_db == VectorDBProvider.CHROMA.value:
+            print(f"[SERVICE LOG IndexService._create_vector_db_index] 创建Chroma索引，集合名: {collection_name}, 索引名: {index_name}")
+            index_info = self._create_chroma_index(embeddings, collection_name, index_name)
+            print(f"[SERVICE LOG IndexService._create_vector_db_index] Chroma索引创建成功: {index_info['index_path']}")
+        elif vector_db == VectorDBProvider.MILVUS.value:
+            print(f"[SERVICE LOG IndexService._create_vector_db_index] 创建Milvus索引，集合名: {collection_name}, 索引名: {index_name}")
+            config = VectorDBConfig(provider=VectorDBProvider.MILVUS.value, index_mode=index_name)
+            milvus_result = self._index_to_milvus(embeddings, collection_name, config)
+            index_info = milvus_result  # contains collection_name and index_size
+            print(f"[SERVICE LOG IndexService._create_vector_db_index] Milvus索引创建成功: 集合名 {index_info['collection_name']}")
+        else:
+            raise ValueError(f"不支持的向量数据库类型: {vector_db}")
+            
+        return index_info
+    
+    def _find_document_file(self, document_id: str) -> str:
+        """
+        在存储目录中查找与document_id匹配的文件
+        """
+        # 默认使用document_id
+        document_filename = document_id
+        
+        try:
+            # 搜索storage/documents目录查找匹配document_id的文件
+            storage_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "storage", "documents")
+            if not os.path.exists(storage_dir):
+                return document_filename
+                
+            # 首先尝试精确匹配document_id开头的文件
+            exact_matches = self._find_exact_matching_files(storage_dir, document_id)
+            
+            # 如果找到了精确匹配，处理第一个匹配项
+            if exact_matches:
+                document_filename = self._extract_filename_from_match(exact_matches[0])
+            else:
+                # 回退到包含document_id的任何文件
+                document_filename = self._find_containing_file(storage_dir, document_id)
+                
+            # 如果上述方法都失败，尝试从document_id本身提取信息
+            if document_filename == document_id:
+                document_filename = self._parse_document_id(document_id)
+                
+        except Exception as e:
+            self.logger.debug(f"Failed to extract document filename from ID: {str(e)}")
+            # 如果提取失败则使用完整的document_id
+            
+        return document_filename
+    
+    def _find_exact_matching_files(self, storage_dir: str, document_id: str) -> List[str]:
+        """查找精确匹配document_id开头的文件"""
+        exact_matches = []
+        for filename in os.listdir(storage_dir):
+            file_id = os.path.splitext(filename)[0]
+            if file_id.startswith(document_id):
+                exact_matches.append(filename)
+        return exact_matches
+    
+    def _extract_filename_from_match(self, matched_file: str) -> str:
+        """从匹配的文件名中提取原始文件名"""
+        self.logger.info(f"Found exact match for document ID: {matched_file}")
+        
+        # 从文件名中提取原始文件名部分
+        base_name = os.path.basename(matched_file)
+        
+        # 首先分离扩展名
+        name_without_ext = os.path.splitext(base_name)[0]
+        
+        # 检查是否是常见的文档命名模式: name_YYYYMMDD_HHMMSS_ID
+        if '_' not in name_without_ext:
+            return name_without_ext
+            
+        # 查找时间戳部分的位置
+        parts = name_without_ext.split('_')
+        timestamp_part_index = self._find_timestamp_part(parts)
+        
+        # 如果找到了时间戳部分，提取前面的所有内容作为原始文件名
+        if timestamp_part_index > 0:
+            document_filename = '_'.join(parts[:timestamp_part_index])
+        elif len(parts) >= 3:
+            # 如果没有找到明确的时间戳部分，则尝试使用倒数第三部分之前的内容
+            document_filename = '_'.join(parts[:-2])
+        else:
+            document_filename = name_without_ext
+        
+        self.logger.info(f"Extracted document filename: {document_filename}")
+        return document_filename
+    
+    def _find_timestamp_part(self, parts: List[str]) -> int:
+        """在文件名部分中查找可能是时间戳的部分"""
+        for i, part in enumerate(parts):
+            if len(part) == 8 and part.isdigit():
+                return i
+        return -1
+    
+    def _find_containing_file(self, storage_dir: str, document_id: str) -> str:
+        """查找包含document_id的任何文件"""
+        for filename in os.listdir(storage_dir):
+            if document_id in filename:
+                base_name = os.path.splitext(os.path.basename(filename))[0]
+                
+                # 如果文件名包含多个部分 (用下划线分隔)，可能是按照特定格式命名的
+                if '_' in base_name:
+                    parts = base_name.split('_')
+                    if len(parts) >= 3 and parts[-2].isdigit() and len(parts[-2]) >= 8:
+                        # 如果倒数第二部分是数字且长度至少为8，可能是时间戳
+                        document_filename = '_'.join(parts[:-2])
+                    else:
+                        document_filename = base_name
+                else:
+                    document_filename = base_name
+                
+                self.logger.info(f"Found document file containing ID: {filename}, extracted document_filename: {document_filename}")
+                return document_filename
+        
+        # 如果没有找到任何匹配，返回原始document_id
+        return document_id
+    
+    def _parse_document_id(self, document_id: str) -> str:
+        """从document_id本身解析文件名"""
+        if "_" not in document_id:
+            return document_id
+            
+        parts = document_id.split("_")
+        
+        # 查找可能是日期部分的部分
+        for i, part in enumerate(parts):
+            if len(part) == 8 and part.isdigit():
+                # 可能是YYYYMMDD格式的日期
+                return '_'.join(parts[:i])
+        
+        # 如果没有找到日期模式，但至少有3个部分，假设最后两个是日期和ID
+        if len(parts) >= 3:
+            return '_'.join(parts[:-2])
+            
+        return document_id
+    
+    def _save_index_result(self, document_id: str, result: Dict[str, Any], timestamp: str, vector_db: str, index_name: str, version: str) -> str:
+        """保存索引结果到文件"""
+        result_file = f"{document_id}_{timestamp}_{vector_db}_{index_name}_v{version}.json"
+        result_path = os.path.join(self.indices_dir, result_file)
+        
+        with open(result_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+            
+        return result_file
+    
     def create_index(self, document_id: str, vector_db: str = None, collection_name: str = None, index_name: str = None, embedding_id: str = None, version: str = "1.0") -> Dict[str, Any]:
         """
         创建向量索引
@@ -173,80 +380,33 @@ class IndexService:
         返回:
             包含索引结果的字典
         """
-        # 使用配置中的默认向量数据库类型，如果未指定
-        if vector_db is None:
-            vector_db = settings.VECTOR_STORE_TYPE
-        
-        # 如果未指定嵌入ID，则尝试查找最新的嵌入
-        if embedding_id is None:
-            raise ValueError("必须指定嵌入ID")
-        
-        # 如果未指定集合名称或索引名称，则自动生成
-        if collection_name is None:
-            collection_name = f"col_{document_id[:10]}"
-        if index_name is None:
-            index_name = f"idx_{embedding_id[:8]}"
+        # 准备和验证参数
+        params = self._prepare_index_parameters(document_id, vector_db, collection_name, index_name, embedding_id)
+        vector_db = params["vector_db"]
+        collection_name = params["collection_name"]
+        index_name = params["index_name"]
         
         print(f"[SERVICE LOG IndexService.create_index] Called with: document_id='{document_id}', vector_db='{vector_db}', collection_name='{collection_name}', index_name='{index_name}', embedding_id='{embedding_id}', version='{version}'")
         
-        # 检查嵌入是否存在
-        embedding_file = self._find_embedding_file(document_id, embedding_id)
-        if not embedding_file:
-            error_message = f"请先为文档ID {document_id} (使用嵌入ID: {embedding_id}) 创建嵌入向量"
-            print(f"[SERVICE ERROR IndexService.create_index] {error_message}")
-            raise FileNotFoundError(error_message)
-        
-        print(f"[SERVICE LOG IndexService.create_index] Found embedding file: {embedding_file}")
-        # 读取嵌入数据
-        with open(embedding_file, "r", encoding="utf-8") as f:
-            embedding_data = json.load(f)
-        
-        # 提取嵌入向量
-        embeddings = embedding_data.get("embeddings", [])
-        if not embeddings:
-            raise ValueError("嵌入数据为空")
+        # 加载嵌入数据
+        embedding_result = self._load_embeddings(document_id, embedding_id)
+        embedding_data = embedding_result["embedding_data"]
+        embeddings = embedding_result["embeddings"]
         
         # 生成唯一ID和时间戳
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         index_id = str(uuid.uuid4())[:8]
         
-        # 根据向量数据库类型创建索引
-        print(f"[SERVICE LOG IndexService.create_index] 使用向量数据库类型: {vector_db}")
-        if vector_db == VectorDBProvider.FAISS.value:
-            print(f"[SERVICE LOG IndexService.create_index] 创建FAISS索引，集合名: {collection_name}, 索引名: {index_name}")
-            index_info = self._create_faiss_index(embeddings, collection_name, index_name)
-            print(f"[SERVICE LOG IndexService.create_index] FAISS索引创建成功: {index_info['index_path']}")
-        elif vector_db == VectorDBProvider.CHROMA.value:
-            print(f"[SERVICE LOG IndexService.create_index] 创建Chroma索引，集合名: {collection_name}, 索引名: {index_name}")
-            index_info = self._create_chroma_index(embeddings, collection_name, index_name)
-            print(f"[SERVICE LOG IndexService.create_index] Chroma索引创建成功: {index_info['index_path']}")
-        elif vector_db == VectorDBProvider.MILVUS.value:
-            # use Milvus for index
-            print(f"[SERVICE LOG IndexService.create_index] 创建Milvus索引，集合名: {collection_name}, 索引名: {index_name}")
-            config = VectorDBConfig(provider=VectorDBProvider.MILVUS.value, index_mode=index_name)
-            milvus_result = self._index_to_milvus(embeddings, collection_name, config)
-            index_info = milvus_result  # contains collection_name and index_size
-            print(f"[SERVICE LOG IndexService.create_index] Milvus索引创建成功: 集合名 {index_info['collection_name']}")
-        else:
-            raise ValueError(f"不支持的向量数据库类型: {vector_db}")
+        # 创建向量数据库索引
+        index_info = self._create_vector_db_index(embeddings, vector_db, collection_name, index_name)
         
-        # 提取文档名（从document_id中)
-        document_filename = document_id
-        try:
-            if "_" in document_id:
-                parts = document_id.split("_")
-                if len(parts) >= 3:
-                    # 文档ID格式通常是"原始文件名_日期时间_ID"
-                    # 提取原始文件名部分
-                    document_filename = "_".join(parts[:-2])
-        except Exception as e:
-            self.logger.debug(f"Failed to extract document filename from ID: {str(e)}")
-            # 如果提取失败则使用完整的document_id
+        # 提取文档文件名
+        document_filename = self._find_document_file(document_id)
         
         # 构建索引结果
         result = {
             "document_id": document_id,
-            "document_filename": document_filename,  # 添加文档名
+            "document_filename": document_filename,
             "index_id": index_id,
             "timestamp": timestamp,
             "vector_db": vector_db,
@@ -261,11 +421,7 @@ class IndexService:
         }
         
         # 保存索引结果
-        result_file = f"{document_id}_{timestamp}_{vector_db}_{index_name}_v{version}.json"
-        result_path = os.path.join(self.indices_dir, result_file)
-        
-        with open(result_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        result_file = self._save_index_result(document_id, result, timestamp, vector_db, index_name, version)
         
         # 返回结果
         result["result_file"] = result_file
@@ -302,6 +458,7 @@ class IndexService:
                             
                         indices.append({
                             "document_id": index_data.get("document_id", ""),
+                            "document_filename": index_data.get("document_filename", ""),  # Include document filename
                             "index_id": index_data.get("index_id", ""),
                             "timestamp": index_data.get("timestamp", ""),
                             "vector_db": index_data.get("vector_db", ""),
