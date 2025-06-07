@@ -121,4 +121,4 @@ def main():
         print(llm_summarize(results, args.query or args.id))
 
 if __name__ == '__main__':
-    main() 
+    main()

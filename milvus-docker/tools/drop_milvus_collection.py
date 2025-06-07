@@ -13,4 +13,4 @@ if __name__ == '__main__':
         utility.drop_collection(args.collection)
         print(f'Collection {args.collection} 已删除')
     else:
-        print(f'Collection {args.collection} 不存在') 
+        print(f'Collection {args.collection} 不存在')

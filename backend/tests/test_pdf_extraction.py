@@ -50,14 +50,14 @@ async def test_pdf_extraction(document_cleanup):  # Make test async and use the 
     """Test PDF extraction functionality using a dynamically generated PDF"""
     pdf_path = None  # Initialize pdf_path
     document_id = None  # Initialize document_id
-    
+
     try:
         # Create a temporary PDF file for testing
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
             pdf_path = tmp_file.name
             # Make sure we close the file before writing to it
             tmp_file.close()
-            
+
             # Generate a simple PDF with reportlab
             from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import letter
@@ -76,19 +76,19 @@ async def test_pdf_extraction(document_cleanup):  # Make test async and use the 
 
             # Create mock UploadFile
             mock_upload_file = create_mock_upload_file(pdf_path)
-            
+
             # Load the PDF file using the mock object
             load_result = await load_service.load_document(mock_upload_file)
             document_id = load_result.get("id")  # Get the ID from the load result
             assert document_id is not None, "Document loading failed to return id"
-            
+
             # Print info to help with debugging
             print(f"Test PDF path: {pdf_path}")
             print(f"Document ID: {document_id}")
-            
+
             # Set a test environment marker to enable test file handling
             os.environ['TEST_ENV'] = 'true'
-            
+
             # Store the temp file name in a way that includes the document_id for easier matching
             new_test_path = os.path.join(os.path.dirname(pdf_path), f"{document_id}_{os.path.basename(pdf_path)}")
             try:
@@ -145,7 +145,7 @@ async def test_pdf_extraction(document_cleanup):  # Make test async and use the 
                 print(f"Cleaned up temporary PDF: {pdf_path}")
             except Exception as e:
                 print(f"Failed to clean up temporary file {pdf_path}: {str(e)}")
-                
+
         # Clean up all files related to this document using document_cleanup fixture
         if document_id:
             cleaned_count = document_cleanup(document_id)
@@ -159,7 +159,7 @@ async def test_parsing_strategies(document_cleanup):
     document_id = None
     load_service = None
     chunk_service = None
-    
+
     try:
         # Create a temporary PDF file for testing with multiple pages
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
@@ -191,10 +191,10 @@ async def test_parsing_strategies(document_cleanup):
             # Initialize services needed for testing
             load_service = LoadService()
             chunk_service = ChunkService()
-            
+
             # Create mock UploadFile
             mock_upload_file = create_mock_upload_file(pdf_path)
-            
+
             # Load the PDF file
             load_result = await load_service.load_document(mock_upload_file)
             document_id = load_result.get("id")  # Changed from "document_id" to "id"
@@ -219,7 +219,7 @@ async def test_parsing_strategies(document_cleanup):
                 assert "chunks" in chunks_data, f"No chunks key in chunks data for strategy {strategy}"
                 assert len(chunks_data["chunks"]) > 0, f"Empty chunks list for strategy {strategy}"
                 print(f"Strategy {strategy} created {len(chunks_data['chunks'])} chunks.")
-                
+
     except Exception as e:
         print(f"Parsing strategies test failed with exception: {str(e)}")
         import traceback
@@ -233,7 +233,7 @@ async def test_parsing_strategies(document_cleanup):
                 print(f"Cleaned up temporary PDF: {pdf_path}")
             except Exception as e:
                 print(f"Failed to clean up temporary file {pdf_path}: {str(e)}")
-                
+
         # Clean up all document-related files right away
         if document_id:
             cleaned_count = document_cleanup(document_id)
@@ -261,10 +261,10 @@ async def test_pdf_extraction_edge_cases(document_cleanup):
             from reportlab.lib.pagesizes import letter
             c = canvas.Canvas(pdf_path_empty, pagesize=letter)
             c.save()
-            
+
             # Create mock UploadFile for empty PDF
             mock_upload_file_empty = create_mock_upload_file(pdf_path_empty)
-            
+
             # Load the empty PDF file
             load_result_empty = await load_service.load_document(mock_upload_file_empty)
             doc_id_empty = load_result_empty.get("id")  # Changed from "document_id" to "id"
@@ -287,7 +287,7 @@ async def test_pdf_extraction_edge_cases(document_cleanup):
                 content = chunks_data_empty["chunks"][0].get("content", "").strip()
                 assert content == "" or content.startswith("[页码:"), f"Chunk for empty PDF is not empty: {content[:100]}..."
             print("Empty PDF processed successfully.")
-            
+
         # --- Test with very small PDF ---
         print("\nTesting small PDF...")
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file_small:
@@ -296,7 +296,7 @@ async def test_pdf_extraction_edge_cases(document_cleanup):
             tmp_file_small.close()
             # Wait a moment to ensure creation time will be different
             time.sleep(0.5)
-            
+
             # Generate a small PDF
             from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import letter
@@ -307,11 +307,11 @@ async def test_pdf_extraction_edge_cases(document_cleanup):
 
             # Create mock UploadFile for small PDF
             mock_upload_file_small = create_mock_upload_file(pdf_path_small)
-            
+
             # Make sure the file exists and is readable
             assert os.path.exists(pdf_path_small), f"Small test PDF not found at {pdf_path_small}"
             print(f"Created small test PDF at: {pdf_path_small}")
-            
+
             # Load the small PDF file
             load_result_small = await load_service.load_document(mock_upload_file_small)
             doc_id_small = load_result_small.get("id")  # Changed from "document_id" to "id"
@@ -331,7 +331,7 @@ async def test_pdf_extraction_edge_cases(document_cleanup):
             chunk_content = chunks_data_small["chunks"][0].get("content", "")
             assert small_text in chunk_content, f"Small PDF content mismatch. Expected '{small_text}' in '{chunk_content}'"
             print("Small PDF processed successfully.")
-            
+
     except Exception as e:
         print(f"Edge case test failed with exception: {str(e)}")
         import traceback
@@ -346,7 +346,7 @@ async def test_pdf_extraction_edge_cases(document_cleanup):
                 print(f"Cleaned up temporary PDF: {pdf_path_empty}")
             except Exception as e:
                 print(f"Failed to clean up temporary file {pdf_path_empty}: {str(e)}")
-                
+
         if doc_id_empty:
             cleaned_count = document_cleanup(doc_id_empty)
             print(f"Cleaned up {cleaned_count} files for document {doc_id_empty}")
@@ -357,7 +357,7 @@ async def test_pdf_extraction_edge_cases(document_cleanup):
                 print(f"Cleaned up temporary PDF: {pdf_path_small}")
             except Exception as e:
                 print(f"Failed to clean up temporary file {pdf_path_small}: {str(e)}")
-                
+
         if doc_id_small:
             cleaned_count = document_cleanup(doc_id_small)
             print(f"Cleaned up {cleaned_count} files for document {doc_id_small}")
@@ -372,7 +372,7 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
     # --- Test with empty PDF ---
     pdf_path_empty = None
     doc_id_empty = None
-    
+
     try:
         print("\nTesting empty PDF...")
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file_empty:
@@ -382,10 +382,10 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
             from reportlab.lib.pagesizes import letter
             c = canvas.Canvas(pdf_path_empty, pagesize=letter)
             c.save()
-            
+
             # Create mock UploadFile for empty PDF
             mock_upload_file_empty = create_mock_upload_file(pdf_path_empty)
-            
+
             # Load the empty PDF file
             load_result_empty = await load_service.load_document(mock_upload_file_empty)
             doc_id_empty = load_result_empty.get("id")
@@ -408,7 +408,7 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
                 content = chunks_data_empty["chunks"][0].get("content", "").strip()
                 assert content == "" or content.startswith("[页码:"), f"Chunk for empty PDF is not empty: {content[:100]}..."
             print("Empty PDF processed successfully.")
-            
+
         # Clean up empty PDF test files immediately
         if pdf_path_empty and os.path.exists(pdf_path_empty):
             try:
@@ -416,21 +416,21 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
                 print(f"Cleaned up empty PDF immediately: {pdf_path_empty}")
             except Exception as e:
                 print(f"Failed to clean up empty PDF file {pdf_path_empty}: {str(e)}")
-                
+
         if doc_id_empty:
             cleaned_count = document_cleanup(doc_id_empty)
             print(f"Cleaned up {cleaned_count} files for document {doc_id_empty} immediately")
-    
+
     except Exception as e:
         print(f"Empty PDF test failed with exception: {str(e)}")
         import traceback
         traceback.print_exc()
         raise
-    
+
     # --- Test with very small PDF ---
     pdf_path_small = None
     doc_id_small = None
-    
+
     try:
         print("\nTesting small PDF...")
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file_small:
@@ -439,7 +439,7 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
             tmp_file_small.close()
             # Wait a moment to ensure creation time will be different
             time.sleep(0.5)
-            
+
             # Generate a small PDF
             from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import letter
@@ -450,11 +450,11 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
 
             # Create mock UploadFile for small PDF
             mock_upload_file_small = create_mock_upload_file(pdf_path_small)
-            
+
             # Make sure the file exists and is readable
             assert os.path.exists(pdf_path_small), f"Small test PDF not found at {pdf_path_small}"
             print(f"Created small test PDF at: {pdf_path_small}")
-            
+
             # Load the small PDF file
             load_result_small = await load_service.load_document(mock_upload_file_small)
             doc_id_small = load_result_small.get("id")
@@ -475,7 +475,7 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
             chunk_content = chunks_data_small["chunks"][0].get("content", "")
             assert small_text in chunk_content, f"Small PDF content mismatch. Expected '{small_text}' in '{chunk_content}'"
             print("Small PDF processed successfully.")
-        
+
         # Clean up small PDF test files immediately
         if pdf_path_small and os.path.exists(pdf_path_small):
             try:
@@ -483,6 +483,17 @@ async def test_pdf_extraction_edge_cases_improved(document_cleanup):
                 print(f"Cleaned up small PDF immediately: {pdf_path_small}")
             except Exception as e:
                 print(f"Failed to clean up small PDF file {pdf_path_small}: {str(e)}")
+
+        if doc_id_small:
+            cleaned_count = document_cleanup(doc_id_small)
+            print(f"Cleaned up {cleaned_count} files for document {doc_id_small} immediately")
+
+    except Exception as e:
+        print(f"Small PDF test failed with exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
+l}: {str(e)}")
                 
         if doc_id_small:
             cleaned_count = document_cleanup(doc_id_small)

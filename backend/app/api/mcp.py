@@ -8,7 +8,7 @@ and VerseMind data.
 import logging
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Optional
 
 from app.mcp import start_mcp_server, stop_mcp_server, set_versemind_data, get_versemind_data
 
@@ -65,21 +65,21 @@ def start_mcp(request: MCPServerStartRequest, background_tasks: BackgroundTasks)
         # Check if MCP server is already running
         from app.mcp.mcp_server_manager import mcp_server_thread
         already_running = mcp_server_thread is not None and mcp_server_thread.is_alive()
-        
+
         if already_running:
             return {
                 "success": True,
                 "running": True
             }
-        
+
         # Start the MCP server in a background task
         def start_server():
             success = start_mcp_server(port=request.port, host=request.host)
             if not success:
                 logger.error("Failed to start MCP server in background task")
-        
+
         background_tasks.add_task(start_server)
-        
+
         return {
             "success": True,
             "running": True
@@ -135,17 +135,17 @@ def set_data(request: VerseMindDataRequest):
     try:
         if request.title is None and request.reference is None:
             raise HTTPException(status_code=400, detail="Either title or reference must be provided")
-        
+
         # Get current data to preserve fields not being updated
         current_data = get_versemind_data()
         title = request.title if request.title is not None else current_data.get("title")
         reference = request.reference if request.reference is not None else current_data.get("reference")
-        
+
         success = set_versemind_data(title=title, reference=reference)
-        
+
         if not success:
             raise HTTPException(status_code=500, detail="Failed to set VerseMind data")
-        
+
         return {
             "success": True,
             "title": title,

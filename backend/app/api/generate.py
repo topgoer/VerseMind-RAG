@@ -1,6 +1,5 @@
-from fastapi import APIRouter, HTTPException, Body, Depends
-from typing import Dict, List, Optional
-import os
+from fastapi import APIRouter, HTTPException, Body
+from typing import Optional
 
 from app.services.generate_service import GenerateService
 
@@ -46,7 +45,7 @@ async def generate_from_search(
 ):
     """
     基于搜索结果生成文本
-    
+
     参数:
         search_id: 搜索结果ID
         prompt: 生成提示
@@ -62,7 +61,7 @@ async def generate_from_search(
         # 使用与generate_text相同的服务方法，但确保search_id不为空
         if not search_id:
             raise ValueError("搜索结果ID不能为空")
-            
+
         result = generate_service.generate_text(search_id, prompt, provider, model, temperature, image_data=image_data)
         return result
     except FileNotFoundError as e:

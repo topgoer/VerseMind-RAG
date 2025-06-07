@@ -1,6 +1,6 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
-from typing import List, Optional
+from typing import Optional
 import os
 import logging
 
@@ -23,10 +23,10 @@ async def upload_document(
     # 检查文件类型
     allowed_extensions = [".pdf", ".docx", ".txt", ".md", ".csv"]
     file_ext = os.path.splitext(file.filename)[1].lower()
-    
+
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail="不支持的文件类型。请上传PDF、DOCX、TXT或Markdown文件。")
-    
+
     # 使用服务处理文件上传
     try:
         result = await load_service.load_document(file, description)
@@ -73,12 +73,12 @@ async def delete_document(document_id: str):
     """
     # Log the request for debugging
     logger.info(f"Received request to delete document with ID: {document_id}")
-    
+
     success = load_service.delete_document(document_id)
     if not success:
         logger.warning(f"Document deletion failed for ID: {document_id}")
         raise HTTPException(status_code=404, detail=f"找不到ID为{document_id}的文档")
-    
+
     logger.info(f"Document with ID {document_id} successfully deleted")
     return {"message": f"文档 {document_id} 已成功删除"}
 

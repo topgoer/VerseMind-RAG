@@ -11,28 +11,28 @@ from app.services.generate_service import GenerateService
 
 class TestLoadService:
     """测试文档加载服务"""
-    
+
     @patch('os.path.getsize')
     @patch('builtins.open')
     @patch('os.makedirs')
     def test_load_document(self, mock_makedirs, mock_open, mock_getsize):
         # 设置模拟
         mock_getsize.return_value = 1024
-        
+
         # 创建服务实例
         service = LoadService()
-        
+
         # 模拟文件对象
         mock_file = MagicMock()
         mock_file.filename = "test.pdf"
-        
+
         # 测试方法
         result = service.get_document_list()
         assert isinstance(result, list)
 
 class TestChunkService:
     """测试文档分块服务"""
-    
+
     @patch('os.makedirs')
     def test_init(self, mock_makedirs):
         service = ChunkService()
@@ -41,7 +41,7 @@ class TestChunkService:
 
 class TestParseService:
     """测试文档解析服务"""
-    
+
     @patch('os.makedirs')
     def test_init(self, mock_makedirs):
         service = ParseService()
@@ -49,7 +49,7 @@ class TestParseService:
 
 class TestEmbedService:
     """测试向量嵌入服务"""
-    
+
     @patch('os.makedirs')
     def test_get_embedding_models(self, mock_makedirs):
         service = EmbedService()
@@ -59,7 +59,7 @@ class TestEmbedService:
 
 class TestIndexService:
     """测试向量索引服务"""
-    
+
     @patch('os.makedirs')
     def test_init(self, mock_makedirs):
         service = IndexService()
@@ -68,7 +68,7 @@ class TestIndexService:
 
 class TestSearchService:
     """测试语义搜索服务"""
-    
+
     @patch('os.makedirs')
     def test_init(self, mock_makedirs):
         service = SearchService()
@@ -77,7 +77,7 @@ class TestSearchService:
 
 class TestGenerateService:
     """测试文本生成服务"""
-    
+
     @patch('os.makedirs')
     def test_get_generation_models(self, mock_makedirs):
         service = GenerateService()

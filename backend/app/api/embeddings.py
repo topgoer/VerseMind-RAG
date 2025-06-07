@@ -1,6 +1,5 @@
-from fastapi import APIRouter, HTTPException, Body, Depends, Query
-from typing import Dict, List, Any, Optional
-import os
+from fastapi import APIRouter, HTTPException, Body, Query
+from typing import Optional
 import logging
 
 from app.services.embed_service import EmbedService
@@ -42,18 +41,18 @@ async def list_embeddings(document_id: Optional[str] = Query(None, description="
     try:
         # Add request logging
         logging.debug(f"Handling embeddings/list request, document_id={document_id}")
-        
+
         result = embed_service.list_embeddings(document_id)
-        
+
         # Add response logging
         embedding_count = len(result) if isinstance(result, list) else 0
         logging.debug(f"Returning {embedding_count} embeddings in response")
-        
+
         # Ensure we return a valid list
         if not isinstance(result, list):
             logging.warning(f"list_embeddings did not return a list: {type(result)}")
             return []
-        
+
         return result
     except Exception as e:
         logging.error(f"Error handling embeddings/list request: {str(e)}", exc_info=True)

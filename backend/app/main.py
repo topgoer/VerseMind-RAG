@@ -1,10 +1,14 @@
 import logging
-from fastapi import FastAPI, APIRouter, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
 import os
 import sys
-from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+from fastapi import FastAPI, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
+from app.api import (
+    documents, chunks, parse, embeddings, index, search, generate,
+    config as config_api, debug, debug_storage, mcp, health
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -35,12 +39,12 @@ class PrintToLogger:
         self.logger = logger
         self.level = level
         self.linebuf = ''
-        
+
     def write(self, buf):
         for line in buf.rstrip().splitlines():
             if line.strip() and '[ChunkService' in line:
                 self.logger.log(self.level, line.rstrip())
-    
+
     def flush(self):
         pass
 
@@ -62,10 +66,6 @@ logging.getLogger("app.services.embed_service").setLevel(logging.WARNING)
 logging.getLogger("core.config").setLevel(logging.WARNING)
 logging.getLogger("ChunkService").setLevel(logging.WARNING)
 logging.getLogger("SearchService").setLevel(logging.WARNING)  # Changed from INFO to WARNING to hide search results
-
-# 导入API路由
-from app.api import documents, chunks, parse, embeddings, index, search, generate, config as config_api, debug
-from app.api import debug_storage, mcp, health
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -115,7 +115,7 @@ required_dirs = [
     "storage/documents",
     # 数据处理流程目录
     "backend/01-loaded_docs",
-    "backend/02-chunked-docs", 
+    "backend/02-chunked-docs",
     "backend/03-parsed-docs",
     "backend/04-embedded-docs",
     # 索引与结果存储

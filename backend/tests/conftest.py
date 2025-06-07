@@ -21,7 +21,7 @@ def cleanup_all_test_files():
     """
     Fixture to clean up all test files at the end of the test session.
     This can help keep the workspace clean between test runs.
-    
+
     Usage:
         def test_something(cleanup_all_test_files):
             # The fixture doesn't need to be used explicitly
@@ -30,7 +30,7 @@ def cleanup_all_test_files():
     """
     # Yield to let the tests run
     yield
-    
+
     # After all tests, clean up all test files
     print("\nCleaning up all test files after test session...")
     count, _ = cleanup_test_files()
@@ -45,7 +45,7 @@ def document_cleanup():
     """
     Fixture to provide a function that cleans up files for a specific document ID.
     This is useful for cleaning up after tests that create document-specific files.
-    
+
     Usage:
         def test_something(document_cleanup):
             # Test that creates a document
@@ -55,11 +55,11 @@ def document_cleanup():
             document_cleanup(document_id)
     """
     created_document_ids = []
-    
+
     def _cleanup(document_id=None):
         """Clean up test files for a specific document ID or all created documents"""
         nonlocal created_document_ids
-        
+
         if document_id:
             if document_id not in created_document_ids:
                 created_document_ids.append(document_id)
@@ -73,10 +73,10 @@ def document_cleanup():
                 total += count
             created_document_ids = []  # Reset the list
             return total
-    
+
     # Provide the cleanup function to the test
     yield _cleanup
-    
+
     # After the test finishes, clean up any documents that weren't explicitly cleaned
     if created_document_ids:
         print(f"\nCleaning up {len(created_document_ids)} document(s) after test...")
@@ -91,7 +91,7 @@ def cleaner():
     """
     Fixture to provide a TestFileCleanup instance that can be used directly.
     This is useful for tests that need more control over the cleanup process.
-    
+
     Usage:
         def test_something(cleaner):
             # Test code here

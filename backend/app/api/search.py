@@ -1,6 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body, Depends, Query
-from typing import Dict, List, Optional
-import os
+from fastapi import APIRouter, HTTPException, Body
 
 from app.services.search_service import SearchService
 
@@ -17,7 +15,7 @@ async def search_endpoint(
 ):
     """
     执行语义搜索（POST请求版本）- 支持索引ID或集合名称
-    
+
     - index_id_or_collection: 索引ID或集合名称
     - query: 查询文本
     - top_k: 返回结果数量
@@ -43,7 +41,7 @@ async def search_with_index(
 ):
     """
     执行语义搜索（带路径参数版本）- 支持索引ID
-    
+
     - index_id: 索引ID
     - query: 查询文本
     - top_k: 返回结果数量
@@ -69,7 +67,7 @@ async def search_collection(
 ):
     """
     执行集合语义搜索（带路径参数版本）- 明确指定集合名称
-    
+
     - collection_name: 集合名称
     - query: 查询文本
     - top_k: 返回结果数量

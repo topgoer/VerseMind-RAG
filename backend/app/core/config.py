@@ -2,9 +2,10 @@
 from pathlib import Path
 import toml
 import logging
+from app.core.logger import get_logger_with_env_level
 
 # Initialize logger for core.config
-# Import here to avoid circular imports 
+# Import here to avoid circular imports
 # Will be updated to use get_logger_with_env_level after settings are loaded
 logger = logging.getLogger("core.config")
 
@@ -29,23 +30,23 @@ class Settings:
         self.DOCUMENTS_DIR = str(BACKEND_ROOT / raw_documents_dir)
         self.CHUNKS_DIR = str(BACKEND_ROOT / raw_chunks_dir)
         self.PARSED_DIR = str(BACKEND_ROOT / raw_parsed_dir)
-        
+
         # Vector store configuration
         vector_store_config = config_data.get("vector_store", {})
         self.VECTOR_STORE_TYPE = vector_store_config.get("type", "faiss")
         raw_persist_directory = vector_store_config.get("persist_directory", "./storage/vector_db")
         self.VECTOR_STORE_PERSIST_DIR = str(BACKEND_ROOT.parent / raw_persist_directory.lstrip("./"))
-        
+
         # FAISS specific configuration
         faiss_config = vector_store_config.get("faiss", {})
         self.FAISS_INDEX_TYPE = faiss_config.get("index_type", "HNSW32")
         self.FAISS_METRIC = faiss_config.get("metric", "cosine")
-        
+
         # Chroma specific configuration
         chroma_config = vector_store_config.get("chroma", {})
         self.CHROMA_COLLECTION_NAME = chroma_config.get("collection_name", "versemind_docs")
         self.CHROMA_DISTANCE_FUNCTION = chroma_config.get("distance_function", "cosine")
-        
+
         # Add other settings as needed, for example:
         # self.LOG_LEVEL = config_data.get("LOGGING", {}).get("LEVEL", "INFO")
 
@@ -85,8 +86,6 @@ logger.debug(f"  CHUNKS_DIR='{settings.CHUNKS_DIR}'")
 logger.debug(f"  PARSED_DIR='{settings.PARSED_DIR}'")
 
 # At this point, we can safely import the logger utility without circular import concerns
-from app.core.logger import get_logger_with_env_level
-
 # Update the logger to use our environment-based logging utility
 logger = get_logger_with_env_level(__name__)
 

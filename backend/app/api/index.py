@@ -1,9 +1,7 @@
-from fastapi import APIRouter, HTTPException, Body, Depends, Query
-from typing import Dict, List, Optional
-import os
+from fastapi import APIRouter, HTTPException, Body, Query
+from typing import Optional
 
 from app.services.index_service import IndexService
-from app.core.config import settings  # Changed import to use app.core.config
 
 router = APIRouter()
 # Initialize the index service which now gets settings internally
@@ -20,7 +18,7 @@ async def create_index(
 ):
     """
     创建向量索引
-    
+
     - document_id: 文档ID（必填）
     - embedding_id: 嵌入ID（必填）
     - vector_db: 向量数据库类型，默认使用配置中的值

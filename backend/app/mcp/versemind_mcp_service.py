@@ -10,10 +10,8 @@ and text generation features.
 
 import os
 import sys
-import json
 import traceback
-from typing import Dict, Any, List, Optional, Union
-from pathlib import Path
+from typing import Dict, Any, List, Optional
 import logging
 
 # Set up logging
@@ -21,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 class ToolManager:
     """Tool manager for the SimpleMCPServer."""
-    
+
     def __init__(self, server):
         self.server = server
-    
+
     def list_tools(self):
         """List all registered tools."""
         return [
@@ -34,7 +32,7 @@ class ToolManager:
 
 class SimpleMCPServer:
     """A simple MCP-like server implementation without external dependencies."""
-    
+
     def __init__(self):
         self.tools = {}
         self.settings = type('Settings', (), {
@@ -42,14 +40,14 @@ class SimpleMCPServer:
             'port': 3005
         })()
         self._tool_manager = ToolManager(self)
-    
+
     def register_tool(self, name: str, func: callable, description: str = ""):
         """Register a tool with the server."""
         self.tools[name] = {
             'func': func,
             'description': description
         }
-    
+
     def run(self, transport='streamable-http'):
         """Mock run method that doesn't actually start a server."""
         logger.info(f"Mock MCP server would run on {self.settings.host}:{self.settings.port} with transport {transport}")
@@ -72,31 +70,31 @@ def mcp_tool_with_error_handling(func):
 
 class VersemindMCPService:
     """Mock VerseMind MCP Service that provides the same interface without external dependencies."""
-    
+
     def __init__(self):
         """Initialize the VerseMind MCP service."""
         self.mcp = SimpleMCPServer()
         self.title = None
         self.reference = None
-        
+
         # Attempt to load current context from global environment if available
         self._load_from_globals()
-        
+
         # Path to document storage
         self.storage_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../storage'))
         self.documents_dir = os.path.join(self.storage_dir, "documents")
         self.indices_dir = os.path.join(self.storage_dir, "indices")
-        
+
         # Available models (would typically be loaded from config)
         self.models = {
             "ollama": ["llama3:8b", "codellama:7b", "mistral:7b"],
             "openai": ["gpt-3.5-turbo", "gpt-4o"],
             "deepseek": ["deepseek-chat", "deepseek-reasoner"]
         }
-        
+
         self._register_tools()
         logger.info("VersemindMCPService initialized (mock implementation)")
-    
+
     def _load_from_globals(self):
         """Load title and reference from globals if available."""
         try:
@@ -106,7 +104,7 @@ class VersemindMCPService:
                     self.title = main_module.title
                 if hasattr(main_module, 'reference'):
                     self.reference = main_module.reference
-                    
+
             # Check if we loaded anything
             if self.title or self.reference:
                 logger.info(f"Loaded VerseMind data: title='{self.title}' and reference data of length {len(self.reference) if self.reference else 0}")
@@ -114,7 +112,7 @@ class VersemindMCPService:
                 logger.debug("No VerseMind data loaded from globals")
         except Exception as e:
             logger.error(f"Error loading from globals: {e}")
-    
+
     def _register_tools(self):
         """Register all available tools with the MCP server."""
         tools = [
@@ -124,14 +122,14 @@ class VersemindMCPService:
             ("search_knowledge_base", self.search_knowledge_base, "Search in knowledge base"),
             ("list_available_models", self.list_available_models, "List available models"),
         ]
-        
+
         for name, func, description in tools:
             self.mcp.register_tool(name, func, description)
-    
+
     def _get_knowledge_bases(self) -> List[Dict[str, Any]]:
         """Get list of available knowledge bases from the documents directory."""
         knowledge_bases = []
-        
+
         try:
             # List knowledge bases from document directory
             if os.path.exists(self.documents_dir):
@@ -148,7 +146,7 @@ class VersemindMCPService:
                         knowledge_bases.append(kb_info)
         except Exception as e:
             logger.error(f"Error getting knowledge bases: {e}")
-        
+
         return knowledge_bases
 
     @mcp_tool_with_error_handling
@@ -161,7 +159,7 @@ class VersemindMCPService:
             "has_data": bool(self.title or self.reference)
         }
 
-    @mcp_tool_with_error_handling  
+    @mcp_tool_with_error_handling
     async def list_knowledge_bases(self) -> Dict[str, Any]:
         """List all available knowledge bases."""
         knowledge_bases = self._get_knowledge_bases()
@@ -176,13 +174,13 @@ class VersemindMCPService:
         """Get detailed information about a specific knowledge base."""
         knowledge_bases = self._get_knowledge_bases()
         kb_info = next((kb for kb in knowledge_bases if kb["id"] == kb_id), None)
-        
+
         if not kb_info:
             return {
                 "success": False,
                 "error": f"Knowledge base '{kb_id}' not found"
             }
-        
+
         return {
             "success": True,
             "knowledge_base": kb_info
@@ -193,7 +191,7 @@ class VersemindMCPService:
         """Search in a knowledge base or all knowledge bases."""
         # This is a mock implementation
         logger.info(f"Mock search: query='{query}', kb_id={kb_id}, limit={limit}")
-        
+
         return {
             "success": True,
             "query": query,

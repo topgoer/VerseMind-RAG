@@ -26,7 +26,7 @@ async def dump_file_locations(index_id: str):
                     "alt_embeddings_dir": getattr(search_service, "alt_embeddings_dir", NOT_AVAILABLE)
                 }
             }
-            
+
         return search_service.debug_dump_files(index_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"调试错误: {str(e)}")
@@ -45,7 +45,7 @@ async def list_indices():
     try:
         indices_dir = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')), 'backend', 'storage', 'indices')
         results = []
-        
+
         if os.path.exists(indices_dir):
             for filename in os.listdir(indices_dir):
                 if filename.endswith(".json"):
@@ -53,7 +53,7 @@ async def list_indices():
                     try:
                         with open(file_path, "r", encoding="utf-8") as f:
                             data = json.load(f)
-                            
+
                         results.append({
                             "filename": filename,
                             "index_id": data.get("index_id", ""),
@@ -66,7 +66,7 @@ async def list_indices():
                             "filename": filename,
                             "error": str(e)
                         })
-        
+
         return {
             "indices_dir": indices_dir,
             "exists": os.path.exists(indices_dir),
@@ -126,13 +126,13 @@ async def get_paths():
         "all_indices": [],
         "all_embeddings": []
     }
-    
+
     # 查找所有索引文件
     index_dirs = [search_indices_dir, search_alt_indices_dir, embed_indices_dir]
     paths["all_indices"] = _get_all_files_in_dirs(index_dirs, '.json')
-    
+
     # 查找所有嵌入文件
     embedding_dirs = [search_embeddings_dir, search_alt_embeddings_dir, embed_embeddings_dir]
     paths["all_embeddings"] = _get_all_files_in_dirs(embedding_dirs, '.json') # Assuming embeddings also use .json, adjust if not
-    
+
     return paths

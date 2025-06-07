@@ -10,7 +10,7 @@ async def health_check():
     """
     indices_path = os.path.join("storage", "indices")
     indices_exists = os.path.exists(indices_path)
-    
+
     # Report more details about the indices directory
     indices_details = {}
     if indices_exists:
@@ -20,7 +20,7 @@ async def health_check():
             indices_details["files"] = indices_files[:5]  # Show first 5 files
         except Exception as e:
             indices_details["error"] = str(e)
-    
+
     return {
         "status": "ok",
         "message": "API is running",

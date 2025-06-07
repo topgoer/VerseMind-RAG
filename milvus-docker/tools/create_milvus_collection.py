@@ -1,12 +1,9 @@
 import argparse
 import sys
-import os
-import time
 from pymilvus import model, connections, Collection, CollectionSchema, FieldSchema, DataType, utility
 import pandas as pd
 from tqdm import tqdm
 import logging
-from dotenv import load_dotenv
 import torch
 import traceback
 
