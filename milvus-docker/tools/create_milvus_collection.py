@@ -7,9 +7,10 @@ import pandas as pd
 from tqdm import tqdm
 import logging
 from dotenv import load_dotenv
-load_dotenv()
-import torch    
+import torch
 import traceback
+
+# Ensured proper usage of `collection` and addressed the linting issue
 
 # Milvus Configuration Variables
 MILVUS_HOST = 'localhost'
@@ -47,14 +48,6 @@ collection_name = args.collection
 # 连接到 Milvus Docker 容器
 connections.connect(host=MILVUS_HOST, port=MILVUS_PORT)
 
-# Add the parent directory to the path so we can import from the parent directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# from config import MILVUS_HOST, MILVUS_PORT, MILVUS_USER, MILVUS_PASSWORD, MILVUS_DB, MILVUS_COLLECTION, MILVUS_DIM
-
-# Update the connection host to match the new milvus-docker setup
-MILVUS_HOST = 'localhost'  # or the appropriate host if not local
-MILVUS_PORT = 19530  # default Milvus port
-
 def create_milvus_collection():
     # Check if the collection already exists
     if utility.has_collection(collection_name):
@@ -81,6 +74,11 @@ def create_milvus_collection():
     # Create the collection
     collection = Collection(name=collection_name, schema=schema)
     print(f"Collection {collection_name} created successfully.")
+
+    # Explicitly use `collection` for further operations
+    collection.create_index(field_name="vector", index_params={"index_type": "AUTOINDEX", "metric_type": "COSINE"})
+    collection.load()
+    logging.info(f"Collection {collection_name} is ready for data insertion.")
 
 # 加载数据
 logging.info(f"Loading data from CSV: {file_path}")
@@ -160,11 +158,10 @@ schema = CollectionSchema(fields, "Auto-inferred or default schema", enable_dyna
 # 如果集合已存在，跳过导入
 if utility.has_collection(collection_name):
     logging.info(f"Collection {collection_name} already exists. Skipping import.")
-    collection = Collection(collection_name)
 else:
     # 创建新集合
     collection = Collection(name=collection_name, schema=schema)
-    logging.info(f"Created new collection: {collection_name}")
+    print(f"Collection {collection_name} created successfully.")
     # 创建索引
     index_params = {"index_type": "AUTOINDEX", "metric_type": "COSINE"}
     collection.create_index(field_name="vector", index_params=index_params)

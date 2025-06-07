@@ -2,13 +2,14 @@ import os
 import json
 import datetime
 import uuid
-import tempfile  # Add import for using temporary files
+import tempfile
 from typing import List, Dict, Any, Optional
-from langchain.text_splitter import RecursiveCharacterTextSplitter  # added langchain splitter import
-import re  # Added re for _chunk_by_langchain_recursive
-import html  # Added for unescaping HTML entities in PDF extraction
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+import re
+import html
 import logging
 from app.core.logger import get_logger_with_env_level
+from app.services.parse_service import ParseService
 
 # Initialize logger using the environment-based configuration
 logger = get_logger_with_env_level(__name__)
@@ -16,9 +17,6 @@ logger = get_logger_with_env_level(__name__)
 # Constants for string literals to avoid duplication
 CHUNKS_JSON_SUFFIX = "_chunks.json"
 DOCX_EXTENSION = ".docx"
-
-# Import ParseService for automatic document parsing after chunking
-from app.services.parse_service import ParseService
 
 class ChunkService:
     """文档分块服务，支持按字数、段落、标题等策略进行切分"""

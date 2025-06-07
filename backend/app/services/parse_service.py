@@ -5,7 +5,7 @@ import uuid
 from typing import Dict, List, Any, Optional, Tuple
 import re
 import logging
-import pandas as pd  # added for table parsing
+import pandas as pd
 from app.core.logger import get_logger_with_env_level
 
 # Initialize logger using the environment-based configuration

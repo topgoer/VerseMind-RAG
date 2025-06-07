@@ -8,15 +8,12 @@ This can be run directly to remove all temporary PDF files created during tests.
 
 import os
 import sys
-import datetime
 import logging
 from pathlib import Path
+from app.utils.test_cleanup import TestFileCleanup, cleanup_test_files
 
 # Add the parent directory to sys.path to import app modules
 sys.path.append(str(Path(__file__).parent.parent))
-
-# Import the TestFileCleanup class 
-from app.utils.test_cleanup import TestFileCleanup, cleanup_test_files
 
 def main():
     """Clean up temporary test files in storage/documents directory"""

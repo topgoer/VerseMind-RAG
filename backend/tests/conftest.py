@@ -7,12 +7,10 @@ import pytest
 import os
 import sys
 from pathlib import Path
+from app.utils.test_cleanup import TestFileCleanup, cleanup_test_files
 
 # Add the parent directory to sys.path to ensure imports work correctly
 sys.path.append(str(Path(__file__).parent.parent))
-
-# Import the cleanup utility
-from app.utils.test_cleanup import TestFileCleanup, cleanup_test_files
 
 # Set the TEST_ENV environment variable to enable test-specific behavior
 os.environ['TEST_ENV'] = 'true'

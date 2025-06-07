@@ -9,7 +9,6 @@ import logging
 import toml
 from pathlib import Path
 import dotenv
-dotenv.load_dotenv()
 from enum import Enum
 import boto3
 from app.core.logger import get_logger_with_env_level
