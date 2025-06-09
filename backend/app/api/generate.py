@@ -37,7 +37,7 @@ async def generate_text(
             document_data=document_data,
             document_text=document_text,
             document_type=document_type,
-            document_name=document_name
+            document_name=document_name,
         )
         return result
     except FileNotFoundError as e:
@@ -96,7 +96,7 @@ async def generate_from_search(
             document_data=document_data,
             document_text=document_text,
             document_type=document_type,
-            document_name=document_name
+            document_name=document_name,
         )
         return result
     except FileNotFoundError as e:

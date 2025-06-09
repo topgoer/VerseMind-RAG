@@ -55,7 +55,8 @@ async def list_indices():
             os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")),
             "backend",
             "storage",
-            "indices",        )
+            "indices",
+        )
         results = []
 
         if os.path.exists(indices_dir):
@@ -144,7 +145,7 @@ async def get_paths():
         },
         "all_indices": [],
         "all_embeddings": [],
-    }    # 查找所有索引文件
+    }  # 查找所有索引文件
     index_dirs = [search_indices_dir, search_alt_indices_dir, embed_indices_dir]
     paths["all_indices"] = _get_all_files_in_dirs(index_dirs, JSON_EXTENSION)
 

@@ -148,23 +148,33 @@ required_dirs = [
     "backend/storage/results",
 ]
 
+
 # 防止创建错误的嵌套backend/backend目录结构的断言检查
 def validate_directory_structure():
     """验证目录结构，防止创建backend/backend嵌套结构"""
     for dir_path in required_dirs:
         # 检查是否包含错误的backend/backend模式
         if "backend/backend" in dir_path:
-            raise ValueError(f"Invalid directory path detected: {dir_path}. "
-                           "This would create a backend/backend nested structure. "
-                           "Please use relative paths like 'backend/01-loaded_docs' instead.")
+            raise ValueError(
+                f"Invalid directory path detected: {dir_path}. "
+                "This would create a backend/backend nested structure. "
+                "Please use relative paths like 'backend/01-loaded_docs' instead."
+            )
 
         # 检查实际文件系统中是否存在嵌套的backend/backend结构
         if dir_path.startswith("backend/"):
             nested_path = os.path.join("backend", dir_path)
             if os.path.exists(nested_path):
-                logging.error(f"Found problematic nested backend structure: {nested_path}")
-                logging.error("This suggests a backend/backend directory was created incorrectly.")
-                logging.error("Please run cleanup script to remove nested backend directories.")
+                logging.error(
+                    f"Found problematic nested backend structure: {nested_path}"
+                )
+                logging.error(
+                    "This suggests a backend/backend directory was created incorrectly."
+                )
+                logging.error(
+                    "Please run cleanup script to remove nested backend directories."
+                )
+
 
 # 运行验证
 validate_directory_structure()

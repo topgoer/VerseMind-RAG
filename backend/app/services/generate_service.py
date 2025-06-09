@@ -151,9 +151,11 @@ class GenerateService:
 
         # 查全局 [llm] 区块
         global_model = llm_config.get("model", "")
-        if (isinstance(llm_config, dict)
+        if (
+            isinstance(llm_config, dict)
             and self._normalize_model_name(global_model) == normalized_model_name
-            and "max_tokens" in llm_config):
+            and "max_tokens" in llm_config
+        ):
             return int(llm_config["max_tokens"])
 
         # fallback: 取全局 [llm] 的 max_tokens
@@ -199,8 +201,16 @@ class GenerateService:
         # 检查是否有直接文档输入
         if document_data or document_text:
             return self._handle_direct_document_generation(
-                prompt, provider, model, temperature, max_tokens, image_data,
-                document_data, document_text, document_type, document_name
+                prompt,
+                provider,
+                model,
+                temperature,
+                max_tokens,
+                image_data,
+                document_data,
+                document_text,
+                document_type,
+                document_name,
             )
 
         # 处理基于搜索结果的生成
@@ -222,7 +232,9 @@ class GenerateService:
         document_name: Optional[str],
     ) -> Dict[str, Any]:
         """处理直接文档输入的生成（绕过索引搜索）"""
-        logger.debug(f"Processing direct document input: type={document_type}, name={document_name}")
+        logger.debug(
+            f"Processing direct document input: type={document_type}, name={document_name}"
+        )
 
         # 构建文档上下文
         document_context = self._build_document_context(
@@ -238,8 +250,13 @@ class GenerateService:
 
         # 创建并保存结果
         result = self._create_generation_result(
-            prompt, provider, model, temperature, effective_max_tokens,
-            None, generated_text  # search_id is None for direct document
+            prompt,
+            provider,
+            model,
+            temperature,
+            effective_max_tokens,
+            None,
+            generated_text,  # search_id is None for direct document
         )
         self._save_generation_result(result)
         return result
@@ -268,10 +285,15 @@ class GenerateService:
 
         # 创建并保存结果
         result = self._create_generation_result(
-            prompt, provider, model, temperature, effective_max_tokens,
-            search_id, generated_text
+            prompt,
+            provider,
+            model,
+            temperature,
+            effective_max_tokens,
+            search_id,
+            generated_text,
         )
-        self._save_generation_result(result)        # 更新VerseMind数据（如果可用）
+        self._save_generation_result(result)  # 更新VerseMind数据（如果可用）
         if MCP_AVAILABLE:
             self._update_mcp_data(
                 prompt, generated_text, context, search_id, search_data
@@ -304,21 +326,31 @@ class GenerateService:
             if document_type == "pdf":
                 document_context += self._extract_pdf_content(document_data)
             elif document_type in ["text", "txt", "markdown", "md"]:
-                document_context += self._extract_text_content(document_data, document_type)
+                document_context += self._extract_text_content(
+                    document_data, document_type
+                )
             else:
                 # 未知文档类型，尝试作为文本处理
-                logger.warning(f"Unknown document type: {document_type}, treating as text")
+                logger.warning(
+                    f"Unknown document type: {document_type}, treating as text"
+                )
                 document_context += self._extract_text_content(document_data, "text")
         return document_context
 
     def _extract_pdf_content(self, document_data: str) -> str:
         """提取PDF文档内容"""
         try:
-            logger.info(f"Starting PDF content extraction, data length: {len(document_data)} chars")
+            logger.info(
+                f"Starting PDF content extraction, data length: {len(document_data)} chars"
+            )
             extracted_text = self._extract_pdf_text_from_base64(document_data)
-            logger.info(f"PDF extraction completed, extracted text length: {len(extracted_text)} chars")
+            logger.info(
+                f"PDF extraction completed, extracted text length: {len(extracted_text)} chars"
+            )
             if extracted_text.strip():
-                logger.info("PDF content extracted successfully, returning formatted content")
+                logger.info(
+                    "PDF content extracted successfully, returning formatted content"
+                )
                 return f"PDF文档内容:\n{extracted_text}\n\n"
             else:
                 logger.warning("PDF content extraction returned empty text")
@@ -332,36 +364,46 @@ class GenerateService:
         try:
             import base64
 
-            logger.info(f"Starting {document_type} content extraction, data length: {len(document_data)} chars")
+            logger.info(
+                f"Starting {document_type} content extraction, data length: {len(document_data)} chars"
+            )
 
             # 解码base64数据
             text_bytes = base64.b64decode(document_data)
 
             # 尝试多种编码方式解码文本
-            for encoding in ['utf-8', 'gbk', 'gb2312', 'big5', 'latin-1']:
+            for encoding in ["utf-8", "gbk", "gb2312", "big5", "latin-1"]:
                 try:
                     extracted_text = text_bytes.decode(encoding)
-                    logger.info(f"Successfully decoded {document_type} content using {encoding}")
+                    logger.info(
+                        f"Successfully decoded {document_type} content using {encoding}"
+                    )
                     break
                 except UnicodeDecodeError:
                     continue
             else:
                 # 如果所有编码都失败，使用utf-8并忽略错误
-                extracted_text = text_bytes.decode('utf-8', errors='ignore')
-                logger.warning(f"Used utf-8 with error ignoring for {document_type} content")
+                extracted_text = text_bytes.decode("utf-8", errors="ignore")
+                logger.warning(
+                    f"Used utf-8 with error ignoring for {document_type} content"
+                )
 
-            logger.info(f"{document_type.upper()} extraction completed, extracted text length: {len(extracted_text)} chars")
+            logger.info(
+                f"{document_type.upper()} extraction completed, extracted text length: {len(extracted_text)} chars"
+            )
 
             if extracted_text.strip():
                 logger.info(f"{document_type.upper()} content extracted successfully")
 
                 # 根据文档类型添加适当的标签
-                if document_type.lower() in ['markdown', 'md']:
+                if document_type.lower() in ["markdown", "md"]:
                     return f"Markdown文档内容:\n{extracted_text}\n\n"
                 else:
                     return f"文本文档内容:\n{extracted_text}\n\n"
             else:
-                logger.warning(f"{document_type.upper()} content extraction returned empty text")
+                logger.warning(
+                    f"{document_type.upper()} content extraction returned empty text"
+                )
                 return f"{document_type.upper()}文档已上传，但内容为空。\n\n"
 
         except Exception as e:
@@ -1095,13 +1137,15 @@ class GenerateService:
         import os
 
         try:
-            logger.info(f"Starting base64 PDF extraction, input data length: {len(base64_data)}")
+            logger.info(
+                f"Starting base64 PDF extraction, input data length: {len(base64_data)}"
+            )
             # Decode base64 data
             pdf_bytes = base64.b64decode(base64_data)
             logger.info(f"Decoded PDF bytes length: {len(pdf_bytes)}")
 
             # Create temporary file
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
                 temp_file.write(pdf_bytes)
                 temp_path = temp_file.name
 
@@ -1117,7 +1161,9 @@ class GenerateService:
                 for page_num in range(page_count):
                     page = doc[page_num]
                     page_text = page.get_text("text")
-                    logger.debug(f"Page {page_num + 1} extracted {len(page_text)} characters")
+                    logger.debug(
+                        f"Page {page_num + 1} extracted {len(page_text)} characters"
+                    )
                     if page_text.strip():
                         text += f"[Page {page_num + 1}]\n{page_text}\n\n"
 
