@@ -166,5 +166,15 @@ version = "1.0.0"
 description = "Where Poetry Meets AI"
 default_language = "en"
 
+# MCP (Model Context Protocol) Integration
+# Native Python MCP server for Cherry Studio and other MCP clients
+[mcp]
+enabled = true
+server_path = "backend/app/mcp/versemind_native_mcp.py"
+api_base = "http://localhost:8000/api"
+# Available tools: get_versemind_data, list_documents, get_document_info, 
+# search_documents, list_indices, list_embedding_models, 
+# list_generation_models, test_connection, ping_backend
+
 
 

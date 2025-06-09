@@ -12,14 +12,14 @@ import DocumentContextDisplay from './DocumentContextDisplay';
 const logger = getLogger('ChatInterface');
 
 function ChatInterface({ 
-  indices,
-  documents,  // Add documents prop
-  loading, 
-  error, 
+  indices = [],
+  documents = [],  // Add documents prop with default
+  loading = false, 
+  error = null, 
   onSendMessage, 
-  chatHistory, 
-  currentTask, 
-  taskProgress 
+  chatHistory = [], 
+  currentTask = null, 
+  taskProgress = ''
 }) {
   const { t } = useLanguage();
   const [inputMessage, setInputMessage] = useState('');
@@ -44,6 +44,7 @@ function ChatInterface({
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedIndex, setSelectedIndex] = useState('');
   const [selectedImage, setSelectedImage] = useState(null); // State for selected image
+  const [selectedDocument, setSelectedDocument] = useState(null); // State for selected document
   const [config, setConfig] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
   
@@ -91,6 +92,7 @@ function ChatInterface({
   const lockScrollUpdateRef = useRef(false); // 锁定滚动更新，防止程序滚动被检测为用户滚动
   
   const imageInputRef = useRef(null); // Ref for hidden file input
+  const documentInputRef = useRef(null); // Ref for hidden document input
   const textareaRef = useRef(null);
   // 复制功能状态
   const [copiedMsgId, setCopiedMsgId] = useState(null);
@@ -271,11 +273,52 @@ function ChatInterface({
     }
   };
 
+  // Handle document selection
+  const handleDocumentSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Check by MIME type and file extension
+      const isValidDocument = 
+        file.type === 'application/pdf' || 
+        file.type.startsWith('text/') || 
+        file.type === 'text/markdown' ||
+        file.name.toLowerCase().endsWith('.md') ||
+        file.name.toLowerCase().endsWith('.txt') ||
+        file.name.toLowerCase().endsWith('.markdown');
+      
+      if (isValidDocument) {
+        setSelectedDocument(file);
+        logger.debug('Document selected:', {
+          name: file.name,
+          type: file.type,
+          size: file.size
+        });
+      } else {
+        logger.warn('Unsupported document type:', {
+          name: file.name,
+          type: file.type
+        });
+      }
+    }
+    // Reset file input value to allow selecting the same file again
+    if (documentInputRef.current) {
+      documentInputRef.current.value = null;
+    }
+  };
+
   // Clear selected image
   const clearSelectedImage = () => {
     setSelectedImage(null);
     if (imageInputRef.current) {
       imageInputRef.current.value = null;
+    }
+  };
+
+  // Clear selected document
+  const clearSelectedDocument = () => {
+    setSelectedDocument(null);
+    if (documentInputRef.current) {
+      documentInputRef.current.value = null;
     }
   };
 
@@ -367,67 +410,49 @@ function ChatInterface({
   
   // Handle send message
   const handleSendMessage = () => {
-    // Allow sending only image, only text, or both
-    if ((!inputMessage.trim() && !selectedImage) || !selectedModel) return;
-    
+    if ((!inputMessage.trim() && !selectedImage && !selectedDocument) || !selectedModel) return;
+
     const inputType = getInputType(selectedIndex);
     logger.debug('[handleSendMessage] selectedIndex:', selectedIndex, 'type:', inputType);
-    
+
     if (typeof onSendMessage === 'function') {
-      // Get all indices to search based on selection
       let indexInfo = {
         source: selectedIndex,
         isIndexId: inputType === 'index_id',
         type: inputType || 'collection_name',
         displayName: inputType === 'index_id' ? getDocumentFilenameByIndexId(selectedIndex) : selectedIndex
       };
-      
-      // If this is a collection name, we'll include this information to help the backend search all indices in this collection
-      if (inputType === 'collection_name' && Array.isArray(indices)) {
-        // Find all indices in this collection
-        const collectionIndices = indices.filter(idx => idx.collection_name === selectedIndex);
-        if (collectionIndices.length > 0) {
-          indexInfo.collectionIndices = collectionIndices.map(idx => idx.index_id);
-        }
-      }
-      
-      // 创建搜索参数对象
+
+      // Prepare search parameters
       const searchParams = {
-        similarityThreshold: similarityThreshold,
         topK: topK,
-        temperature: temperature, // Include temperature parameter
-        inputType: inputType, // Adding input type for better context
-        // Add information about whether this is a collection or index ID
-        searchInfo: selectedIndex ? indexInfo : null
+        similarityThreshold: similarityThreshold,
+        inputType: inputType,
+        temperature: temperature
       };
-      
-      // Pass the necessary parameters to onSendMessage (which is handleSearchAndGenerate)
-      // This will first search the index and then generate text based on the search results
-      // If no index is selected, it will generate text without search context
-      onSendMessage(selectedIndex || null, inputMessage, selectedProvider, selectedModel, selectedImage, searchParams);
-    } else {
-      logger.critical("onSendMessage prop in ChatInterface is not a function!", {
-        propType: typeof onSendMessage,
-        propValue: onSendMessage
+
+      // Skip index search if sending a PDF file
+      let indexId = selectedIndex;
+      if (selectedDocument?.type === 'application/pdf') {
+        indexId = null; // No index search for PDF files
+        logger.debug('[handleSendMessage] PDF detected, bypassing index search for:', selectedDocument.name);
+      }
+
+      // Call the function with individual parameters as expected by handleSearchAndGenerate
+      logger.debug('[handleSendMessage] Calling onSendMessage with params:', {
+        indexId,
+        message: inputMessage.trim(),
+        provider: selectedProvider,
+        model: selectedModel,
+        selectedImage,
+        searchParams,
+        document: selectedDocument
       });
-      // Optionally, display an error to the user here
-    }
-    
-    setInputMessage('');
-    clearSelectedImage(); // Clear image after sending
-    
-    // 确保发送消息后100%滚动到底部
-    setTimeout(() => {
-      lockScrollUpdateRef.current = true;
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      setTimeout(() => {
-        lockScrollUpdateRef.current = false;
-      }, 300);
-    }, 100);
-    
-    // 重置高度
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+
+      onSendMessage(indexId, inputMessage.trim(), selectedProvider, selectedModel, selectedImage, searchParams, selectedDocument);
+      setInputMessage('');
+      clearSelectedImage();
+      clearSelectedDocument();
     }
   };
   // Handle Enter key press
@@ -764,6 +789,34 @@ function ChatInterface({
                   <DocumentContextDisplay message={message} />
               )}
             </div>
+            {/* 显示已选择的文档 */}
+            {message.document && (
+              <div className="mb-3 p-2 border border-gray-300 rounded-md bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-sm text-gray-600">{message.documentName || message.document.name}</span>
+                  </div>
+                  {message.document && typeof message.document === 'object' && (
+                    <a
+                      href={URL.createObjectURL(message.document)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline text-sm ml-2"
+                    >
+                      {t('viewDocument', 'View Document')}
+                    </a>
+                  )}
+                </div>
+                {message.documentSize && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Size: ${Math.round(message.documentSize / 1024)} KB
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
         {loading && (
@@ -833,6 +886,21 @@ function ChatInterface({
             </div>
           </div>
         )}
+        {/* 显示已选择的文档 */}
+        {selectedDocument && (
+          <div className="mb-2 relative inline-block">
+            <div className="border border-gray-300 rounded-md p-1">
+              <span className="text-sm">{selectedDocument.name}</span>
+              <button
+                onClick={clearSelectedDocument}
+                className="ml-2 text-red-500 hover:text-red-700"
+                title={t('removeDocument', '移除文档')}
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex items-end space-x-2">
           <input
             type="file"
@@ -841,15 +909,32 @@ function ChatInterface({
             accept="image/png, image/jpeg, image/webp, image/gif"
             className="hidden"
           />
+          <input
+            type="file"
+            ref={documentInputRef}
+            style={{ display: 'none' }}
+            accept="application/pdf,text/plain,text/markdown,.md,.txt"
+            onChange={handleDocumentSelect}
+          />
           <button
             onClick={() => imageInputRef.current?.click()}
             className="p-2 text-gray-500 hover:text-purple-600 border border-gray-300 rounded-md bg-white"
             title={t('attachImage')}
             disabled={loading || configLoading}
           >
-            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'%3E%3C/path%3E%3C/svg%3E" 
-                 alt="Attach" 
-                 className="w-5 h-5" />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => documentInputRef.current?.click()}
+            className="p-2 text-gray-500 hover:text-purple-600 border border-gray-300 rounded-md bg-white"
+            title={t('uploadDocument')}
+            disabled={loading || configLoading}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
           </button>
           <textarea
             ref={textareaRef}
@@ -867,9 +952,9 @@ function ChatInterface({
             disabled={loading || configLoading}
           />          <button
             onClick={handleSendWithScroll}
-            disabled={(!inputMessage.trim() && !selectedImage) || loading || configLoading}
+            disabled={(!inputMessage.trim() && !selectedImage && !selectedDocument) || loading || configLoading}
             className={`px-4 py-2 rounded-md text-white self-stretch flex items-center justify-center ${
-              (!inputMessage.trim() && !selectedImage) || loading || configLoading
+              (!inputMessage.trim() && !selectedImage && !selectedDocument) || loading || configLoading
                 ? 'bg-purple-400 cursor-not-allowed'
                 : 'bg-purple-600 hover:bg-purple-700'
             }`}
@@ -913,17 +998,6 @@ ChatInterface.propTypes = {
   ),
   currentTask: PropTypes.object,
   taskProgress: PropTypes.string
-};
-
-// Add default props
-ChatInterface.defaultProps = {
-  indices: [],
-  documents: [],
-  loading: false,
-  error: null,
-  chatHistory: [],
-  currentTask: null,
-  taskProgress: ''
 };
 
 export default ChatInterface;

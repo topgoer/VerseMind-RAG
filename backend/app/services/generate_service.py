@@ -151,12 +151,10 @@ class GenerateService:
 
         # 查全局 [llm] 区块
         global_model = llm_config.get("model", "")
-        if (
-            isinstance(llm_config, dict)
+        if (isinstance(llm_config, dict)
             and self._normalize_model_name(global_model) == normalized_model_name
-        ):
-            if "max_tokens" in llm_config:
-                return int(llm_config["max_tokens"])
+            and "max_tokens" in llm_config):
+            return int(llm_config["max_tokens"])
 
         # fallback: 取全局 [llm] 的 max_tokens
         if isinstance(llm_config, dict) and "max_tokens" in llm_config:
@@ -174,6 +172,10 @@ class GenerateService:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         image_data: Optional[str] = None,
+        document_data: Optional[str] = None,
+        document_text: Optional[str] = None,
+        document_type: Optional[str] = None,
+        document_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         基于检索结果生成文本
@@ -186,40 +188,185 @@ class GenerateService:
             temperature: 温度参数
             max_tokens: 最大生成令牌数
             image_data: base64编码的图片数据（可选）
+            document_data: base64编码的文档数据（可选，如PDF）
+            document_text: 文档文本内容（可选，如TXT/MD）
+            document_type: 文档类型（可选）
+            document_name: 文档名称（可选）
 
         返回:
             包含生成结果的字典
         """
+        # 检查是否有直接文档输入
+        if document_data or document_text:
+            return self._handle_direct_document_generation(
+                prompt, provider, model, temperature, max_tokens, image_data,
+                document_data, document_text, document_type, document_name
+            )
+
+        # 处理基于搜索结果的生成
+        return self._handle_search_based_generation(
+            search_id, prompt, provider, model, temperature, max_tokens, image_data
+        )
+
+    def _handle_direct_document_generation(
+        self,
+        prompt: str,
+        provider: str,
+        model: str,
+        temperature: float,
+        max_tokens: Optional[int],
+        image_data: Optional[str],
+        document_data: Optional[str],
+        document_text: Optional[str],
+        document_type: Optional[str],
+        document_name: Optional[str],
+    ) -> Dict[str, Any]:
+        """处理直接文档输入的生成（绕过索引搜索）"""
+        logger.debug(f"Processing direct document input: type={document_type}, name={document_name}")
+
+        # 构建文档上下文
+        document_context = self._build_document_context(
+            document_data, document_text, document_type, document_name
+        )
+
+        # 生成文本
+        full_prompt = document_context + prompt
+        effective_max_tokens = self._get_effective_max_tokens(model, max_tokens)
+        generated_text = self._generate_text_with_model(
+            full_prompt, provider, model, temperature, effective_max_tokens, image_data
+        )
+
+        # 创建并保存结果
+        result = self._create_generation_result(
+            prompt, provider, model, temperature, effective_max_tokens,
+            None, generated_text  # search_id is None for direct document
+        )
+        self._save_generation_result(result)
+        return result
+
+    def _handle_search_based_generation(
+        self,
+        search_id: Optional[str],
+        prompt: str,
+        provider: str,
+        model: str,
+        temperature: float,
+        max_tokens: Optional[int],
+        image_data: Optional[str],
+    ) -> Dict[str, Any]:
+        """处理基于搜索结果的生成"""
         # 获取搜索结果和上下文
         search_data, search_results = self._get_search_results(search_id)
         context = self._build_context(search_results, search_id, search_data)
 
-        # 构建完整提示并生成文本
+        # 生成文本
         full_prompt = context + prompt if context else prompt
         effective_max_tokens = self._get_effective_max_tokens(model, max_tokens)
         generated_text = self._generate_text_with_model(
             full_prompt, provider, model, temperature, effective_max_tokens, image_data
         )
 
-        # 创建结果并保存
+        # 创建并保存结果
         result = self._create_generation_result(
-            prompt,
-            provider,
-            model,
-            temperature,
-            effective_max_tokens,
-            search_id,
-            generated_text,
+            prompt, provider, model, temperature, effective_max_tokens,
+            search_id, generated_text
         )
-        self._save_generation_result(result)
-
-        # 更新VerseMind数据（如果可用）
+        self._save_generation_result(result)        # 更新VerseMind数据（如果可用）
         if MCP_AVAILABLE:
             self._update_mcp_data(
                 prompt, generated_text, context, search_id, search_data
             )
 
         return result
+
+    def _build_document_context(
+        self,
+        document_data: Optional[str],
+        document_text: Optional[str],
+        document_type: Optional[str],
+        document_name: Optional[str],
+    ) -> str:
+        """构建文档上下文字符串"""
+        document_context = ""
+
+        # 添加文档元信息
+        if document_name:
+            document_context += f"文档名称: {document_name}\n"
+        if document_type:
+            document_context += f"文档类型: {document_type}\n"
+
+        # 处理文档内容
+        if document_text:
+            # 直接提供的文本内容
+            document_context += f"文档内容:\n{document_text}\n\n"
+        elif document_data:
+            # 根据文档类型处理base64编码的数据
+            if document_type == "pdf":
+                document_context += self._extract_pdf_content(document_data)
+            elif document_type in ["text", "txt", "markdown", "md"]:
+                document_context += self._extract_text_content(document_data, document_type)
+            else:
+                # 未知文档类型，尝试作为文本处理
+                logger.warning(f"Unknown document type: {document_type}, treating as text")
+                document_context += self._extract_text_content(document_data, "text")
+        return document_context
+
+    def _extract_pdf_content(self, document_data: str) -> str:
+        """提取PDF文档内容"""
+        try:
+            logger.info(f"Starting PDF content extraction, data length: {len(document_data)} chars")
+            extracted_text = self._extract_pdf_text_from_base64(document_data)
+            logger.info(f"PDF extraction completed, extracted text length: {len(extracted_text)} chars")
+            if extracted_text.strip():
+                logger.info("PDF content extracted successfully, returning formatted content")
+                return f"PDF文档内容:\n{extracted_text}\n\n"
+            else:
+                logger.warning("PDF content extraction returned empty text")
+                return "PDF文档已上传，但无法提取文本内容。\n\n"
+        except Exception as e:
+            logger.error(f"Failed to extract PDF text: {str(e)}")
+            return "PDF文档已上传，但文本提取失败。\n\n"
+
+    def _extract_text_content(self, document_data: str, document_type: str) -> str:
+        """提取文本或Markdown文档内容"""
+        try:
+            import base64
+
+            logger.info(f"Starting {document_type} content extraction, data length: {len(document_data)} chars")
+
+            # 解码base64数据
+            text_bytes = base64.b64decode(document_data)
+
+            # 尝试多种编码方式解码文本
+            for encoding in ['utf-8', 'gbk', 'gb2312', 'big5', 'latin-1']:
+                try:
+                    extracted_text = text_bytes.decode(encoding)
+                    logger.info(f"Successfully decoded {document_type} content using {encoding}")
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                # 如果所有编码都失败，使用utf-8并忽略错误
+                extracted_text = text_bytes.decode('utf-8', errors='ignore')
+                logger.warning(f"Used utf-8 with error ignoring for {document_type} content")
+
+            logger.info(f"{document_type.upper()} extraction completed, extracted text length: {len(extracted_text)} chars")
+
+            if extracted_text.strip():
+                logger.info(f"{document_type.upper()} content extracted successfully")
+
+                # 根据文档类型添加适当的标签
+                if document_type.lower() in ['markdown', 'md']:
+                    return f"Markdown文档内容:\n{extracted_text}\n\n"
+                else:
+                    return f"文本文档内容:\n{extracted_text}\n\n"
+            else:
+                logger.warning(f"{document_type.upper()} content extraction returned empty text")
+                return f"{document_type.upper()}文档已上传，但内容为空。\n\n"
+
+        except Exception as e:
+            logger.error(f"Failed to extract {document_type} text: {str(e)}")
+            return f"{document_type.upper()}文档已上传，但文本提取失败: {str(e)}\n\n"
 
     def _get_search_results(
         self, search_id: Optional[str]
@@ -436,11 +583,7 @@ class GenerateService:
             return self._generate_with_openai(
                 prompt, model, temperature, max_tokens, image_data
             )
-        elif provider == "deepseek":
-            return self._generate_with_deepseek(
-                prompt, model, temperature, max_tokens, image_data
-            )
-        elif provider == "siliconflow":
+        elif provider in ["deepseek", "siliconflow"]:
             return self._generate_with_deepseek(
                 prompt, model, temperature, max_tokens, image_data
             )
@@ -943,3 +1086,58 @@ class GenerateService:
                 yield data["response"]
         except json.JSONDecodeError:
             logger.error(f"无法解析JSON: {line}")
+
+    def _extract_pdf_text_from_base64(self, base64_data: str) -> str:
+        """Extract text from base64 encoded PDF data"""
+        import base64
+        import tempfile
+        import fitz  # PyMuPDF
+        import os
+
+        try:
+            logger.info(f"Starting base64 PDF extraction, input data length: {len(base64_data)}")
+            # Decode base64 data
+            pdf_bytes = base64.b64decode(base64_data)
+            logger.info(f"Decoded PDF bytes length: {len(pdf_bytes)}")
+
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                temp_file.write(pdf_bytes)
+                temp_path = temp_file.name
+
+            logger.info(f"Created temporary PDF file: {temp_path}")
+
+            try:
+                # Extract text using PyMuPDF
+                doc = fitz.open(temp_path)
+                text = ""
+                page_count = len(doc)
+                logger.info(f"PDF has {page_count} pages")
+
+                for page_num in range(page_count):
+                    page = doc[page_num]
+                    page_text = page.get_text("text")
+                    logger.debug(f"Page {page_num + 1} extracted {len(page_text)} characters")
+                    if page_text.strip():
+                        text += f"[Page {page_num + 1}]\n{page_text}\n\n"
+
+                doc.close()
+
+                if not text.strip():
+                    logger.warning("No text extracted from PDF")
+                    return ""
+
+                logger.info(f"Successfully extracted {len(text)} characters from PDF")
+                return text
+
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_path)
+                    logger.debug(f"Cleaned up temporary file: {temp_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp file {temp_path}: {e}")
+
+        except Exception as e:
+            logger.error(f"PDF text extraction failed: {str(e)}")
+            raise

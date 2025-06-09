@@ -6,7 +6,6 @@ pymupdf==1.24.0
 python-docx==1.1.0
 langchain
 langchain-text-splitters
-ollama==0.1.6
 openai==1.12.0
 requests==2.31.0
 numpy==1.26.0
@@ -34,3 +33,4 @@ docker
 jsonschema
 attrs<24,>=23.1.0
 importlib-metadata<7.0,>=1.4.0
+mcp>=1.9.0

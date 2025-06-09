@@ -272,6 +272,8 @@ const translations = {
     welcomeMessage: 'Welcome to VerseMind-RAG! Select collection and ask questions about your documents.',
     selectIndexFirst: 'Please select a collection first',
     chatError: 'An error occurred while processing your request',
+    attachedDocument: 'Attached Document',
+    viewDocument: 'View Document',
     
     // 任务型请求
     taskDetected: 'I detected the following tasks:',
@@ -569,6 +571,8 @@ const translations = {
     welcomeMessage: '欢迎使用 VerseMind-RAG！请选择集合并就您的文档提问。',
     selectIndexFirst: '请先选择一个集合',
     chatError: '处理您的请求时发生错误',
+    attachedDocument: '附加文档',
+    viewDocument: '查看文档',
     
     // 任务型请求
     taskDetected: '我检测到以下任务：',

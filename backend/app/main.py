@@ -64,21 +64,22 @@ class PrintToLogger:
 
 # 创建一个专门用于捕获 ChunkService 输出的日志器
 chunk_logger = logging.getLogger("ChunkService")
-chunk_logger.setLevel(logging.WARNING)  # 只显示警告和错误
+# Use the environment-based log level instead of forcing WARNING
+chunk_logger.setLevel(log_level)
 
 # 重定向标准输出，只捕获 ChunkService 相关的打印内容
 sys.stdout = PrintToLogger(chunk_logger, logging.DEBUG)
 
-# Set the global logging level to WARNING to suppress all INFO and DEBUG logs unless explicitly enabled
-logging.getLogger().setLevel(logging.WARNING)
+# Apply the environment-based logging level to all loggers instead of forcing WARNING
+logging.getLogger().setLevel(log_level)
 
-# Ensure all component-specific logging levels are set to WARNING
-logging.getLogger("app.services.load_service").setLevel(logging.WARNING)
-logging.getLogger("app.services.parse_service").setLevel(logging.WARNING)
-logging.getLogger("app.services.chunk_service").setLevel(logging.WARNING)
-logging.getLogger("app.services.embed_service").setLevel(logging.WARNING)
-logging.getLogger("core.config").setLevel(logging.WARNING)
-logging.getLogger("ChunkService").setLevel(logging.WARNING)
+# Set all component-specific logging levels to use the environment-based level
+logging.getLogger("app.services.load_service").setLevel(log_level)
+logging.getLogger("app.services.parse_service").setLevel(log_level)
+logging.getLogger("app.services.chunk_service").setLevel(log_level)
+logging.getLogger("app.services.embed_service").setLevel(log_level)
+logging.getLogger("core.config").setLevel(log_level)
+logging.getLogger("ChunkService").setLevel(log_level)
 logging.getLogger("SearchService").setLevel(
     logging.WARNING
 )  # Changed from INFO to WARNING to hide search results
@@ -146,6 +147,27 @@ required_dirs = [
     "backend/storage/indices",
     "backend/storage/results",
 ]
+
+# 防止创建错误的嵌套backend/backend目录结构的断言检查
+def validate_directory_structure():
+    """验证目录结构，防止创建backend/backend嵌套结构"""
+    for dir_path in required_dirs:
+        # 检查是否包含错误的backend/backend模式
+        if "backend/backend" in dir_path:
+            raise ValueError(f"Invalid directory path detected: {dir_path}. "
+                           "This would create a backend/backend nested structure. "
+                           "Please use relative paths like 'backend/01-loaded_docs' instead.")
+
+        # 检查实际文件系统中是否存在嵌套的backend/backend结构
+        if dir_path.startswith("backend/"):
+            nested_path = os.path.join("backend", dir_path)
+            if os.path.exists(nested_path):
+                logging.error(f"Found problematic nested backend structure: {nested_path}")
+                logging.error("This suggests a backend/backend directory was created incorrectly.")
+                logging.error("Please run cleanup script to remove nested backend directories.")
+
+# 运行验证
+validate_directory_structure()
 
 # 创建所有必要的目录
 for dir_path in required_dirs:

@@ -11,6 +11,7 @@ search_service = SearchService()
 embed_service = EmbedService()
 
 NOT_AVAILABLE = "Not available"
+JSON_EXTENSION = ".json"
 
 
 @router.get("/dump-files/{index_id}")
@@ -54,13 +55,12 @@ async def list_indices():
             os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")),
             "backend",
             "storage",
-            "indices",
-        )
+            "indices",        )
         results = []
 
         if os.path.exists(indices_dir):
             for filename in os.listdir(indices_dir):
-                if filename.endswith(".json"):
+                if filename.endswith(JSON_EXTENSION):
                     file_path = os.path.join(indices_dir, filename)
                     try:
                         with open(file_path, "r", encoding="utf-8") as f:
@@ -144,11 +144,9 @@ async def get_paths():
         },
         "all_indices": [],
         "all_embeddings": [],
-    }
-
-    # 查找所有索引文件
+    }    # 查找所有索引文件
     index_dirs = [search_indices_dir, search_alt_indices_dir, embed_indices_dir]
-    paths["all_indices"] = _get_all_files_in_dirs(index_dirs, ".json")
+    paths["all_indices"] = _get_all_files_in_dirs(index_dirs, JSON_EXTENSION)
 
     # 查找所有嵌入文件
     embedding_dirs = [
@@ -157,7 +155,7 @@ async def get_paths():
         embed_embeddings_dir,
     ]
     paths["all_embeddings"] = _get_all_files_in_dirs(
-        embedding_dirs, ".json"
+        embedding_dirs, JSON_EXTENSION
     )  # Assuming embeddings also use .json, adjust if not
 
     return paths

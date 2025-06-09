@@ -1354,41 +1354,149 @@ function App() {
     return aiMessage;
   };
 
+  // Helper function to handle document processing for generation
+  const processDocumentForGeneration = async (selectedDocument) => {
+    if (!selectedDocument) return {};
+    
+    try {
+      if (selectedDocument.type === 'application/pdf') {
+        // For PDF files, convert to base64 using FileReader to avoid call stack issues
+        const reader = new FileReader();
+        const base64Document = await new Promise((resolve, reject) => {
+          reader.onload = () => {
+            // FileReader result includes data:application/pdf;base64, prefix
+            const result = reader.result;
+            const base64Data = result.split(',')[1]; // Extract just the base64 part
+            resolve(base64Data);
+          };
+          reader.onerror = () => reject(new Error('Failed to read PDF file'));
+          reader.readAsDataURL(selectedDocument);
+        });
+        
+        logger.debug('PDF document processed successfully:', {
+          name: selectedDocument.name,
+          size: selectedDocument.size,
+          base64Length: base64Document.length
+        });
+        
+        return {
+          document_data: base64Document,
+          document_type: 'pdf',
+          document_name: selectedDocument.name
+        };
+      } else if (selectedDocument.type.startsWith('text/') || 
+                 selectedDocument.type === 'text/markdown' ||
+                 selectedDocument.name.toLowerCase().endsWith('.md') ||
+                 selectedDocument.name.toLowerCase().endsWith('.txt')) {
+        // For text files, read as text
+        const documentText = await selectedDocument.text();
+        return {
+          document_text: documentText,
+          document_type: 'text',
+          document_name: selectedDocument.name
+        };
+      }
+    } catch (error) {
+      logger.error('Error processing document:', error);
+      // Still return basic document info even if processing fails
+      return {
+        document_name: selectedDocument.name,
+        document_type: selectedDocument.type === 'application/pdf' ? 'pdf' : 'text',
+        error: error.message
+      };
+    }
+    return {};
+  };
+
+  // Helper function to handle search logic
+  const handleSearchStep = async (indexId, message, selectedDocument, searchParams) => {
+    if (selectedDocument?.type === 'application/pdf') {
+      logger.debug('Skipping index search for PDF document');
+      return {
+        searchResult: null,
+        documentContext: {
+          documentName: selectedDocument.name,
+          usingDirectDocument: true,
+          documentType: selectedDocument.type
+        }
+      };
+    }
+    
+    if (indexId) {
+      const searchResponse = await performSearch(indexId, message, searchParams);
+      return {
+        searchResult: searchResponse.searchResult,
+        documentContext: searchResponse.documentContext
+      };
+    }
+    
+    logger.debug('No index ID provided and no PDF document, proceeding without search context');
+    return { searchResult: null, documentContext: null };
+  };
+
+  // Helper function to prepare generation request
+  const prepareGenerationRequest = async (message, provider, model, temperature, searchResult, selectedImage, selectedDocument) => {
+    const generateBody = {
+      prompt: message,
+      provider,
+      model,
+      temperature
+    };
+
+    if (searchResult?.search_id) {
+      generateBody.search_id = searchResult.search_id;
+    }
+
+    // Convert image to base64 if present
+    const base64Data = await convertImageToBase64(selectedImage);
+    if (base64Data) {
+      generateBody.image_data = base64Data;
+    }
+
+    // Add document data if present
+    const documentData = await processDocumentForGeneration(selectedDocument);
+    Object.assign(generateBody, documentData);
+
+    if (documentData.document_name) {
+      logger.debug('Added document data to generation request:', {
+        documentType: documentData.document_type,
+        documentName: documentData.document_name,
+        hasDocumentData: !!(documentData.document_data || documentData.document_text)
+      });
+    }
+
+    return generateBody;
+  };
+
   // 处理搜索和生成（聊天模式）
-  const handleSearchAndGenerate = async (indexId, message, provider, model, selectedImage = null, searchParams = {}) => {
+  const handleSearchAndGenerate = async (indexId, message, provider, model, selectedImage = null, searchParams = {}, selectedDocument = null) => {
     try {
       setLoading(true);
       setError(null);
       
       const temperature = searchParams?.temperature || 0.7;
-      logger.debug(`Processing chat message: "${message}" with index ${indexId}`);
+      logger.debug(`Processing chat message: "${message}" with index ${indexId}`, {
+        hasDocument: !!selectedDocument,
+        documentType: selectedDocument?.type,
+        documentName: selectedDocument?.name
+      });
       
       // 添加用户消息到聊天历史
       const userMessage = createUserMessage(message, selectedImage);
+      if (selectedDocument) {
+        userMessage.document = selectedDocument; // Store the actual File object
+        userMessage.documentName = selectedDocument.name; // Store the document name separately
+        userMessage.documentType = selectedDocument.type;
+        userMessage.documentSize = selectedDocument.size;
+      }
       setChatHistory(prev => [...prev, userMessage]);
       
       // 步骤1：搜索
-      const { searchResult, documentContext } = await performSearch(indexId, message, searchParams);
+      const { searchResult, documentContext } = await handleSearchStep(indexId, message, selectedDocument, searchParams);
       
       // 步骤2：生成文本
       logger.debug(`Generating AI response with model ${model}...`);
-      
-      const generateBody = {
-        prompt: message,
-        provider,
-        model,
-        temperature
-      };
-      
-      if (searchResult?.search_id) {
-        generateBody.search_id = searchResult.search_id;
-      }
-      
-      // Convert image to base64 if present
-      const base64Data = await convertImageToBase64(selectedImage);
-      if (base64Data) {
-        generateBody.image_data = base64Data;
-      }
+      const generateBody = await prepareGenerationRequest(message, provider, model, temperature, searchResult, selectedImage, selectedDocument);
       
       // Send the generation request
       const generateResponse = await fetch('/api/generate', {
@@ -1619,7 +1727,7 @@ function App() {
         processedWithLanguage: cacheKey
       };
     }));
-  }, [chatHistory, language, t, processDocumentName, indices]);
+  }, [language, t, processDocumentName, indices]);
 
   // Effect to update the welcome message when language changes
   useEffect(() => {
