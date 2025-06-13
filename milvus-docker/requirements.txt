@@ -1,0 +1,5 @@
+pymilvus>=2.3.0
+pandas>=2.0.0
+sentence-transformers>=2.2.0
+tqdm==4.66.4
+tenacity>=8.2.0 

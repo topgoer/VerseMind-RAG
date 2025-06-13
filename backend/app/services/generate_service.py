@@ -1,12 +1,17 @@
-import os
-import json
+import base64
 import datetime
+import json
+import os
 import uuid
-import requests
-import toml
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional, AsyncGenerator # Added AsyncGenerator
+import toml # Added import
+
 from app.api.config import get_config_path
 from app.core.logger import get_logger_with_env_level
+from app.services.llm_service import LLMService
+
+# Constants
+CONTENT_TYPE_JSON = "application/json"
 
 # Import MCP server related functions
 try:
@@ -34,6 +39,8 @@ class GenerateService:
         logger.debug(
             f"GenerateService initialized with results_dir: {self.results_dir}"
         )
+
+        # Initialize API keys
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self.deepseek_api_base = os.environ.get(
@@ -43,6 +50,12 @@ class GenerateService:
             "OLLAMA_BASE_URL", "http://localhost:11434"
         )
         logger.debug(f"Loaded OLLAMA_BASE_URL: '{self.ollama_base_url}'")
+
+        # Create LLM service instances
+        self.openai_llm = LLMService(api_key=self.openai_api_key, model_type="openai")
+        self.deepseek_llm = LLMService(api_key=self.deepseek_api_key, api_base=self.deepseek_api_base, model_type="deepseek")
+        self.ollama_llm = LLMService(api_base=self.ollama_base_url, model_type="ollama")
+
         # 只读取一次 config.toml，使用 config.py 的 get_config_path
         config_path = get_config_path()
         with open(config_path, "r", encoding="utf-8") as f:
@@ -626,8 +639,9 @@ class GenerateService:
                 prompt, model, temperature, max_tokens, image_data
             )
         elif provider in ["deepseek", "siliconflow"]:
+            # Call _generate_with_deepseek without temperature and max_tokens
             return self._generate_with_deepseek(
-                prompt, model, temperature, max_tokens, image_data
+                prompt, model, image_data=image_data
             )
         else:
             raise ValueError(f"不支持的提供商: {provider}")
@@ -641,42 +655,18 @@ class GenerateService:
         image_data: Optional[str] = None,
     ) -> str:
         """使用Ollama生成文本，可选择包含图片数据"""
-        try:
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": temperature, "num_predict": max_tokens},
-            }
+        # 从config.toml检查是否支持视觉
+        supports_vision = self._check_supports_vision(model)
 
-            # 从config.toml检查是否支持视觉
-            supports_vision = self._check_supports_vision(model)
-
-            # 如果有图片且模型支持视觉功能
-            if image_data and supports_vision:
-                print(f"[DEBUG] Adding image data to Ollama request for model {model}")
-                # 添加图片数据到请求 - Ollama expects raw base64, not data URI format
-                payload["images"] = [image_data]
-
-            response = requests.post(
-                f"{self.ollama_base_url}/api/generate",
-                headers=headers,
-                json=payload,
-                timeout=180,  # 增加超时时间以避免大模型生成超时
-            )
-
-            if response.status_code != 200:
-                raise ValueError(
-                    f"Ollama API错误: {response.status_code} - {response.text}"
-                )
-
-            result = response.json()
-            return result.get("response", "")
-
-        except Exception as e:
-            logger.error(f"Ollama生成错误: {str(e)}")
-            raise
+        # 使用统一的LLM服务接口
+        return self.ollama_llm.generate(
+            prompt=prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            image_data=image_data,
+            supports_vision=supports_vision
+        )
 
     def _generate_with_openai(
         self,
@@ -687,125 +677,32 @@ class GenerateService:
         image_data: Optional[str] = None,
     ) -> str:
         """使用OpenAI生成文本，可选择包含图片数据"""
-        if not self.openai_api_key:
-            raise ValueError("未设置OpenAI API密钥")
+        # 从config.toml检查是否支持视觉
+        supports_vision = self._check_supports_vision(model)
 
-        try:
-            import openai
-
-            client = openai.OpenAI(api_key=self.openai_api_key)
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": "你是一个有用的AI助手。基于提供的信息回答问题。",
-                }
-            ]
-
-            # 从config.toml检查是否支持视觉
-            supports_vision = self._check_supports_vision(model)
-
-            # 如果有图片且模型支持视觉功能，则构建包含图片的消息
-            if image_data and supports_vision:
-                # 构建包含文本和图片的内容
-                user_message = {
-                    "role": "user",
-                    "content": [{"type": "text", "text": prompt}],
-                }
-
-                # 添加图片到内容中
-                user_message["content"].append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image_data}"},
-                    }
-                )
-
-                messages.append(user_message)
-            else:
-                # 没有图片或者模型不支持视觉，使用普通文本消息
-                messages.append({"role": "user", "content": prompt})
-
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-
-            return response.choices[0].message.content
-
-        except Exception as e:
-            logger.error(f"OpenAI生成错误: {str(e)}")
-            raise
+        # 使用统一的LLM服务接口
+        return self.openai_llm.generate(
+            prompt=prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            image_data=image_data,
+            supports_vision=supports_vision
+        )
 
     def _generate_with_deepseek(
         self,
         prompt: str,
         model: str,
-        temperature: float,
-        max_tokens: int,
-        image_data: Optional[str] = None,
+        image_data: Optional[str] = None,  # Removed temperature and max_tokens
     ) -> str:
-        """使用DeepSeek生成文本，可选择包含图片数据"""
-        if not self.deepseek_api_key:
-            raise ValueError("未设置DeepSeek API密钥 (DEEPSEEK_API_KEY)")
-
-        try:
-            # 使用OpenAI风格的客户端访问DeepSeek API
-            from openai import OpenAI
-
-            # 确定正确的模型名称
-            if "deepseek-chat" in model or "deepseek-v3" in model:
-                model_name = "deepseek-chat"
-            elif "deepseek-reasoner" in model or "deepseek-r1" in model:
-                model_name = "deepseek-reasoner"
-            else:
-                model_name = model
-
-            # 从config.toml检查是否支持视觉
-            supports_vision = self._check_supports_vision(model)
-
-            # 创建客户端连接
-            client = OpenAI(
-                api_key=self.deepseek_api_key, base_url=self.deepseek_api_base
-            )
-
-            # 如果有图片且模型支持视觉功能，则构建包含图片的消息
-            if image_data and supports_vision:
-                # 构建包含文本和图片的内容
-                messages = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_data}"
-                                },
-                            },
-                        ],
-                    }
-                ]
-            else:
-                # 没有图片或模型不支持视觉，使用普通文本消息
-                messages = [{"role": "user", "content": prompt}]
-
-            # 调用API生成文本
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=False,
-            )
-
-            return response.choices[0].message.content
-
-        except Exception as e:
-            logger.error(f"DeepSeek生成错误: {str(e)}")
-            raise
+        """使用DeepSeek生成文本"""
+        # 使用统一的LLM服务接口
+        return self.deepseek_llm.generate(
+            prompt=prompt,
+            model=model,
+            image_data=image_data
+        )
 
     async def generate_text_stream(
         self,
@@ -898,8 +795,9 @@ class GenerateService:
     ):
         """基于提供商选择合适的流式生成方法"""
         if provider == "deepseek":
+            # Call _stream_with_deepseek without temperature and max_tokens
             async for text_chunk in self._stream_with_deepseek(
-                prompt, model, temperature, max_tokens, image_data
+                prompt, model, image_data=image_data
             ):
                 yield text_chunk
         elif provider == "openai":
@@ -919,70 +817,25 @@ class GenerateService:
         self,
         prompt: str,
         model: str,
-        temperature: float,
-        max_tokens: int,
-        image_data: Optional[str] = None,
-    ):
-        """使用DeepSeek流式生成文本，可选择包含图片数据"""
-        if not self.deepseek_api_key:
-            raise ValueError("未设置DeepSeek API密钥 (DEEPSEEK_API_KEY)")
+        image_data: Optional[str] = None,  # Removed temperature and max_tokens
+    ) -> AsyncGenerator[str, None]:
+        """使用DeepSeek流式生成文本
 
-        try:
-            from openai import OpenAI
+        Args:
+            prompt: 用户提示文本
+            model: 要使用的DeepSeek模型名称
+            image_data: 可选的图片数据（DeepSeek不支持，将被忽略）
 
-            # 确定正确的模型名称
-            if "deepseek-chat" in model or "deepseek-v3" in model:
-                model_name = "deepseek-chat"
-            elif "deepseek-reasoner" in model or "deepseek-r1" in model:
-                model_name = "deepseek-reasoner"
-            else:
-                model_name = model
-
-            # 从config.toml检查是否支持视觉
-            supports_vision = self._check_supports_vision(model)
-
-            # 创建客户端连接
-            client = OpenAI(
-                api_key=self.deepseek_api_key, base_url=self.deepseek_api_base
-            )
-
-            # 如果有图片且模型支持视觉功能，则构建包含图片的消息
-            if image_data and supports_vision:
-                # 构建包含文本和图片的内容
-                messages = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_data}"
-                                },
-                            },
-                        ],
-                    }
-                ]
-            else:
-                # 没有图片或模型不支持视觉，使用普通文本消息
-                messages = [{"role": "user", "content": prompt}]
-
-            # 调用API流式生成文本
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-            )
-
-            for chunk in response:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-
-        except Exception as e:
-            logger.error(f"DeepSeek流式生成错误: {str(e)}")
-            yield f"错误: {str(e)}"
+        Yields:
+            生成的文本片段
+        """
+        # 使用统一的LLM服务接口进行流式生成
+        async for chunk in self.deepseek_llm.generate_stream(
+            prompt=prompt,
+            model=model,
+            image_data=image_data
+        ):
+            yield chunk
 
     async def _stream_with_openai(
         self,
@@ -993,60 +846,19 @@ class GenerateService:
         image_data: Optional[str] = None,
     ):
         """使用OpenAI流式生成文本，可选择包含图片数据"""
-        if not self.openai_api_key:
-            raise ValueError("未设置OpenAI API密钥")
+        # 从config.toml检查是否支持视觉
+        supports_vision = self._check_supports_vision(model)
 
-        try:
-            import openai
-
-            client = openai.OpenAI(api_key=self.openai_api_key)
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": "你是一个有用的AI助手。基于提供的信息回答问题。",
-                }
-            ]
-
-            # 从config.toml检查是否支持视觉
-            supports_vision = self._check_supports_vision(model)
-
-            # 如果有图片且模型支持视觉功能，则构建包含图片的消息
-            if image_data and supports_vision:
-                # 构建包含文本和图片的内容
-                user_message = {
-                    "role": "user",
-                    "content": [{"type": "text", "text": prompt}],
-                }
-
-                # 添加图片到内容中
-                user_message["content"].append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image_data}"},
-                    }
-                )
-
-                messages.append(user_message)
-            else:
-                # 没有图片或者模型不支持视觉，使用普通文本消息
-                messages.append({"role": "user", "content": prompt})
-
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=True,
-            )
-
-            for chunk in response:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-
-        except Exception as e:
-            logger.error(f"OpenAI流式生成错误: {str(e)}")
-            yield f"错误: {str(e)}"
+        # 使用统一的LLM服务接口进行流式生成
+        async for chunk in self.openai_llm.generate_stream(
+            prompt=prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            image_data=image_data,
+            supports_vision=supports_vision
+        ):
+            yield chunk
 
     async def _stream_with_ollama(
         self,
@@ -1057,81 +869,24 @@ class GenerateService:
         image_data: Optional[str] = None,
     ):
         """使用Ollama流式生成文本，支持图片数据"""
-        try:
-            payload = self._prepare_ollama_payload(
-                model, prompt, temperature, max_tokens, image_data, stream=True
-            )
-            async for chunk in self._fetch_ollama_stream(payload):
-                yield chunk
-
-        except Exception as e:
-            logger.error(f"Ollama流式生成错误: {str(e)}")
-            yield f"错误: {str(e)}"
-
-    def _prepare_ollama_payload(
-        self,
-        model: str,
-        prompt: str,
-        temperature: float,
-        max_tokens: int,
-        image_data: Optional[str] = None,
-        stream: bool = False,
-    ) -> Dict[str, Any]:
-        """准备Ollama API请求的payload"""
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": stream,
-            "options": {"temperature": temperature, "num_predict": max_tokens},
-        }
-
         # 从config.toml检查是否支持视觉
         supports_vision = self._check_supports_vision(model)
 
-        # 如果有图片且模型支持视觉功能
-        if image_data and supports_vision:
-            print(f"[DEBUG] Adding image data to Ollama request for model {model}")
-            # 添加图片数据到请求 - Ollama expects raw base64, not data URI format
-            payload["images"] = [image_data]
+        # 使用统一的LLM服务接口进行流式生成
+        async for chunk in self.ollama_llm.generate_stream(
+            prompt=prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            image_data=image_data,
+            supports_vision=supports_vision
+        ):
+            yield chunk
 
-        return payload
-
-    async def _fetch_ollama_stream(self, payload: Dict[str, Any]):
-        """从Ollama API获取流式响应"""
-        import aiohttp
-
-        headers = {"Content-Type": "application/json"}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.ollama_base_url}/api/generate",
-                headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=300),
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise ValueError(
-                        f"Ollama API错误: {response.status} - {error_text}"
-                    )
-
-                async for line in response.content:
-                    if line:
-                        for response in self._parse_ollama_response(line):
-                            yield response
-
-    def _parse_ollama_response(self, line):
-        """解析Ollama API响应"""
-        try:
-            data = json.loads(line)
-            if "response" in data:
-                yield data["response"]
-        except json.JSONDecodeError:
-            logger.error(f"无法解析JSON: {line}")
+    # 删除了不再使用的Ollama助手方法，现在由LLMService处理
 
     def _extract_pdf_text_from_base64(self, base64_data: str) -> str:
         """Extract text from base64 encoded PDF data"""
-        import base64
         import tempfile
         import fitz  # PyMuPDF
         import os

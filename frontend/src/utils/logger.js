@@ -5,10 +5,10 @@
 
 // Get log level from environment variables - default to 'INFO' if not set
 const LOG_LEVEL = import.meta.env.VITE_LOG_LEVEL || 'INFO';
+console.log('VITE_LOG_LEVEL from import.meta.env:', import.meta.env.VITE_LOG_LEVEL);
 
-// Debug: Log the current log level setting
-console.log('🔍 Logger Debug: VITE_LOG_LEVEL =', import.meta.env.VITE_LOG_LEVEL);
-console.log('🔍 Logger Debug: Effective LOG_LEVEL =', LOG_LEVEL);
+// Debug logs are commented out to reduce console noise
+// console.log('🔍 Logger Debug: Effective LOG_LEVEL =', LOG_LEVEL);
 
 // Define log levels and their priorities
 const LOG_LEVELS = {
@@ -27,8 +27,8 @@ class Logger {
     this.module = module;
     this.currentLevel = LOG_LEVELS[LOG_LEVEL] !== undefined ? LOG_LEVELS[LOG_LEVEL] : LOG_LEVELS.INFO;
     
-    // Debug: Log logger initialization
-    console.log(`🔍 Logger [${module}] initialized with level: ${LOG_LEVEL} (numeric: ${this.currentLevel})`);
+    // Debug initialization log is commented out to reduce console noise
+    // console.log(`🔍 Logger [${module}] initialized with level: ${LOG_LEVEL} (numeric: ${this.currentLevel})`);
   }
 
   /**

@@ -18,6 +18,7 @@ from app.api import (
     debug_storage,
     mcp,
     health,
+    conversation,
 )
 
 # Load environment variables from .env file
@@ -39,7 +40,7 @@ logging.debug(f"Logging level set to: {log_level_str}")
 
 # MCP server configuration
 ENABLE_MCP_SERVER = os.getenv("ENABLE_MCP_SERVER", "true").lower() == "true"
-MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "3005"))
+MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "3006"))
 MCP_SERVER_HOST = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
 logging.debug(
     f"MCP Server settings: enabled={ENABLE_MCP_SERVER}, port={MCP_SERVER_PORT}, host={MCP_SERVER_HOST}"
@@ -225,6 +226,8 @@ api_router.include_router(embeddings.router, prefix="/embeddings", tags=["embedd
 api_router.include_router(index.router, prefix="/indices", tags=["indices"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(generate.router, prefix="/generate", tags=["generate"])
+api_router.include_router(conversation.router, prefix="/conversation", tags=["conversation"])
+# api_router.include_router(test_deepseek.router, prefix="/test-deepseek", tags=["test-deepseek"])  # 临时测试端点
 api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
 api_router.include_router(debug_storage.router, prefix="/debug", tags=["debug"])
 

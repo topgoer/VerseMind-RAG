@@ -1,8 +1,11 @@
 from fastapi import APIRouter, HTTPException, Body
+from fastapi.responses import StreamingResponse
 from typing import Optional
+import logging
 
 from app.services.generate_service import GenerateService
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 generate_service = GenerateService()
 
@@ -115,3 +118,98 @@ async def get_generation_models():
     获取可用的生成模型列表
     """
     return generate_service.get_generation_models()
+
+
+@router.post("/stream")
+async def generate_text_stream(
+    search_id: Optional[str] = Body(None),
+    prompt: str = Body(...),
+    provider: str = Body(...),
+    model: str = Body(...),
+    temperature: float = Body(0.7),
+    max_tokens: Optional[int] = Body(None),
+    image_data: Optional[str] = Body(None),
+):
+    """
+    流式生成文本，支持基于检索结果的生成
+    """
+    try:
+        async def generate():
+            try:
+                async for chunk in generate_service.generate_text_stream(
+                    search_id=search_id,
+                    prompt=prompt,
+                    provider=provider,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    image_data=image_data,
+                ):
+                    # 发送Server-Sent Events格式的数据
+                    yield f"data: {chunk}\n\n"
+
+                # 发送结束信号
+                yield "data: [DONE]\n\n"
+
+            except Exception as e:
+                logger.error(f"Error in stream generation: {str(e)}")
+                yield f"data: [ERROR] {str(e)}\n\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error setting up stream generation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/stream/direct")
+async def generate_text_stream_direct(
+    prompt: str = Body(...),
+    provider: str = Body(...),
+    model: str = Body(...),
+    temperature: float = Body(0.7),
+    max_tokens: Optional[int] = Body(None),
+    image_data: Optional[str] = Body(None),
+):
+    """
+    直接流式生成文本，不使用检索结果
+    """
+    try:
+        async def generate():
+            try:
+                async for chunk in generate_service.generate_text_stream(
+                    search_id=None,  # 不使用检索结果
+                    prompt=prompt,
+                    provider=provider,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    image_data=image_data,
+                ):
+                    yield f"data: {chunk}\n\n"
+
+                yield "data: [DONE]\n\n"
+
+            except Exception as e:
+                logger.error(f"Error in direct stream generation: {str(e)}")
+                yield f"data: [ERROR] {str(e)}\n\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error setting up direct stream generation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

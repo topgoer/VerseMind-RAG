@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import { useLanguage } from './contexts/LanguageContext';
 import { loadConfig } from './utils/configLoader';
+import logger from './utils/logger'; // Added import for logger
 
 // 检查字符串是否为十六进制ID
 const isHexIdString = (str) => {
@@ -225,8 +226,6 @@ const addToGlobalLookup = (searchId, documentName, collectionName, indexId) => {
     logger.error("Failed to add to global document lookup:", err);
   }
 };
-
-import logger from './utils/logger';
 
 function App() {
   const { t, language } = useLanguage();
