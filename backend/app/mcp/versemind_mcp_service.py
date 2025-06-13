@@ -74,7 +74,9 @@ class VersemindMCPService:
 
     def __init__(self):
         """Initialize the VerseMind MCP service."""
-        self.mcp = SimpleMCPServer()  # This will be replaced by the actual MCP server instance
+        self.mcp = (
+            SimpleMCPServer()
+        )  # This will be replaced by the actual MCP server instance
         self.title = None
         self.reference = None
 
@@ -125,19 +127,40 @@ class VersemindMCPService:
         # The actual registration will happen with the real MCP server instance
         # This method defines what tools *should* be registered.
         tools_to_register = {
-            "get_versemind_data": {"func": self.get_versemind_data, "description": "Get current VerseMind data (title and reference)"},
-            "list_knowledge_bases": {"func": self.list_knowledge_bases, "description": "List available knowledge bases in VerseMind-RAG"},
-            "get_knowledge_base_info": {"func": self.get_knowledge_base_info, "description": "Get detailed information about a specific knowledge base"},
-            "search_knowledge_base": {"func": self.search_knowledge_base, "description": "Search in a specific or all knowledge bases"},
-            "list_available_models": {"func": self.list_available_models, "description": "List available AI models configured in VerseMind-RAG"},
+            "get_versemind_data": {
+                "func": self.get_versemind_data,
+                "description": "Get current VerseMind data (title and reference)",
+            },
+            "list_knowledge_bases": {
+                "func": self.list_knowledge_bases,
+                "description": "List available knowledge bases in VerseMind-RAG",
+            },
+            "get_knowledge_base_info": {
+                "func": self.get_knowledge_base_info,
+                "description": "Get detailed information about a specific knowledge base",
+            },
+            "search_knowledge_base": {
+                "func": self.search_knowledge_base,
+                "description": "Search in a specific or all knowledge bases",
+            },
+            "list_available_models": {
+                "func": self.list_available_models,
+                "description": "List available AI models configured in VerseMind-RAG",
+            },
         }
 
         # This part is more conceptual for this file, actual registration is in mcp_server_manager
         for name, tool_info in tools_to_register.items():
-            if hasattr(self.mcp, 'register_tool'): # Check if mcp object can register (it can, via SimpleMCPServer)
-                 self.mcp.register_tool(name, tool_info['func'], tool_info['description'])
+            if hasattr(
+                self.mcp, "register_tool"
+            ):  # Check if mcp object can register (it can, via SimpleMCPServer)
+                self.mcp.register_tool(
+                    name, tool_info["func"], tool_info["description"]
+                )
             else:
-                logger.warning(f"MCP server object does not have 'register_tool' method. Tool '{name}' not registered here.")
+                logger.warning(
+                    f"MCP server object does not have 'register_tool' method. Tool '{name}' not registered here."
+                )
 
     def _get_knowledge_bases(self) -> List[Dict[str, Any]]:
         """Get list of available knowledge bases from the documents directory."""
@@ -154,17 +177,23 @@ class VersemindMCPService:
                     kb_path = os.path.join(self.documents_dir, filename)
                     try:
                         kb_info = {
-                            "id": Path(filename).stem,  # Use Pathlib for robust name extraction
+                            "id": Path(
+                                filename
+                            ).stem,  # Use Pathlib for robust name extraction
                             "name": filename,
                             "file_type": Path(filename).suffix.lower(),
                             "size_bytes": os.path.getsize(kb_path),
-                            "last_modified": os.path.getmtime(kb_path),  # Consider converting to ISO format string
+                            "last_modified": os.path.getmtime(
+                                kb_path
+                            ),  # Consider converting to ISO format string
                         }
                         knowledge_bases.append(kb_info)
                     except Exception as e:
                         logger.error(f"Error processing file {kb_path}: {e}")
         except Exception as e:
-            logger.error(f"Error listing knowledge bases from {self.documents_dir}: {e}")
+            logger.error(
+                f"Error listing knowledge bases from {self.documents_dir}: {e}"
+            )
 
         return knowledge_bases
 
@@ -199,7 +228,10 @@ class VersemindMCPService:
         kb_info = next((kb for kb in knowledge_bases if kb["id"] == kb_id), None)
 
         if not kb_info:
-            return {"success": False, "error": f"Knowledge base with ID '{kb_id}' not found."}
+            return {
+                "success": False,
+                "error": f"Knowledge base with ID '{kb_id}' not found.",
+            }
 
         return {"success": True, "knowledge_base": kb_info}
 
@@ -208,7 +240,9 @@ class VersemindMCPService:
         self, query: str, kb_id: Optional[str] = None, limit: int = 5
     ) -> Dict[str, Any]:
         """Search in a knowledge base or all knowledge bases. Mock implementation."""
-        logger.info(f"Mock search in VersemindMCPService: query='{query}', kb_id={kb_id}, limit={limit}")
+        logger.info(
+            f"Mock search in VersemindMCPService: query='{query}', kb_id={kb_id}, limit={limit}"
+        )
 
         # This would call the actual RAG search logic in a real implementation
         # For now, returns a mock response
@@ -216,20 +250,29 @@ class VersemindMCPService:
         for i in range(min(limit, 3)):  # Mock up to 3 results or limit
             results.append(
                 {
-                    "id": f"mock_result_{i+1}",
-                    "content": f"This is mock search result {i+1} for query '{query}' from KB '{kb_id or 'all'}'.",
+                    "id": f"mock_result_{i + 1}",
+                    "content": f"This is mock search result {i + 1} for query '{query}' from KB '{kb_id or 'all'}'.",
                     "score": round(0.9 - (i * 0.05), 2),
                     "source": kb_id or "all_knowledge_bases",
                 }
             )
 
-        return {"success": True, "query": query, "results": results, "total_results": len(results)}
+        return {
+            "success": True,
+            "query": query,
+            "results": results,
+            "total_results": len(results),
+        }
 
     @mcp_tool_with_error_handling
     async def list_available_models(self) -> Dict[str, Any]:
         """List all available AI models."""
         # In a real scenario, this might dynamically check configured models
-        return {"success": True, "models": self.models, "total_providers": len(self.models)}
+        return {
+            "success": True,
+            "models": self.models,
+            "total_providers": len(self.models),
+        }
 
 
 # Example of how this service might be instantiated by mcp_server_manager
@@ -269,7 +312,9 @@ if __name__ == "__main__":
             print(json.dumps(kb_info_result, indent=2))
 
             print(f"\n--- Testing search_knowledge_base for {test_kb_id} ---")
-            search_result = await service.search_knowledge_base(query="test query", kb_id=test_kb_id)
+            search_result = await service.search_knowledge_base(
+                query="test query", kb_id=test_kb_id
+            )
             print(json.dumps(search_result, indent=2))
 
         print("\n--- Testing list_available_models ---")

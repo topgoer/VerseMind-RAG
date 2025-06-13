@@ -134,6 +134,7 @@ async def generate_text_stream(
     流式生成文本，支持基于检索结果的生成
     """
     try:
+
         async def generate():
             try:
                 async for chunk in generate_service.generate_text_stream(
@@ -182,6 +183,7 @@ async def generate_text_stream_direct(
     直接流式生成文本，不使用检索结果
     """
     try:
+
         async def generate():
             try:
                 async for chunk in generate_service.generate_text_stream(

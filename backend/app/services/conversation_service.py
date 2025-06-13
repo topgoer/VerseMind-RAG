@@ -14,6 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ConversationService:
     """异步对话服务，支持多轮对话和会话管理"""
 
@@ -24,7 +25,9 @@ class ConversationService:
         # API配置
         self.deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
-        self.ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.ollama_base_url = os.environ.get(
+            "OLLAMA_BASE_URL", "http://localhost:11434"
+        )
 
         logger.info(f"ConversationService initialized with storage: {self.storage_dir}")
 
@@ -38,14 +41,16 @@ class ConversationService:
             "system_prompt": system_prompt or "You are a helpful assistant.",
             "messages": [],
             "total_tokens": 0,
-            "last_updated": datetime.now().isoformat()
+            "last_updated": datetime.now().isoformat(),
         }
 
         await self._save_conversation(conversation_id, conversation_data)
         logger.info(f"Started new conversation: {conversation_id}")
         return conversation_id
 
-    async def add_message(self, conversation_id: str, role: str, content: str) -> Dict[str, Any]:
+    async def add_message(
+        self, conversation_id: str, role: str, content: str
+    ) -> Dict[str, Any]:
         """向对话添加消息"""
         conversation = await self._load_conversation(conversation_id)
         if not conversation:
@@ -56,7 +61,7 @@ class ConversationService:
             "role": role,
             "content": content,
             "timestamp": datetime.now().isoformat(),
-            "tokens": len(content.split())  # 简单的token估算
+            "tokens": len(content.split()),  # 简单的token估算
         }
 
         conversation["messages"].append(message)
@@ -73,7 +78,7 @@ class ConversationService:
         provider: str = "deepseek",
         model: str = "deepseek-chat",
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> AsyncGenerator[str, None]:
         """异步流式对话"""
         try:
@@ -90,14 +95,18 @@ class ConversationService:
 
             # 流式生成响应
             response_content = ""
-            async for chunk in self._stream_chat(provider, model, messages, temperature, max_tokens):
+            async for chunk in self._stream_chat(
+                provider, model, messages, temperature, max_tokens
+            ):
                 response_content += chunk
                 yield chunk
 
             # 保存AI响应
             if response_content:
                 await self.add_message(conversation_id, "assistant", response_content)
-                logger.info(f"Conversation {conversation_id}: Generated {len(response_content)} characters")
+                logger.info(
+                    f"Conversation {conversation_id}: Generated {len(response_content)} characters"
+                )
 
         except Exception as e:
             error_message = f"Error in chat_stream: {str(e)}"
@@ -111,7 +120,7 @@ class ConversationService:
         provider: str = "deepseek",
         model: str = "deepseek-chat",
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> Dict[str, Any]:
         """同步对话（一次性返回完整响应）"""
         try:
@@ -132,13 +141,16 @@ class ConversationService:
             )
 
             # 保存AI响应
-            ai_msg = await self.add_message(conversation_id, "assistant", response_content)
+            ai_msg = await self.add_message(
+                conversation_id, "assistant", response_content
+            )
 
             return {
                 "conversation_id": conversation_id,
                 "user_message": user_msg,
                 "ai_response": ai_msg,
-                "total_messages": len(conversation["messages"]) + 2  # +2 for the new messages
+                "total_messages": len(conversation["messages"])
+                + 2,  # +2 for the new messages
             }
 
         except Exception as e:
@@ -168,7 +180,7 @@ class ConversationService:
                             "last_updated": conversation.get("last_updated"),
                             "message_count": len(conversation.get("messages", [])),
                             "total_tokens": conversation.get("total_tokens", 0),
-                            "preview": self._get_conversation_preview(conversation)
+                            "preview": self._get_conversation_preview(conversation),
                         }
                         conversations.append(summary)
         except Exception as e:
@@ -192,16 +204,15 @@ class ConversationService:
 
     # Private helper methods
 
-    def _build_message_history(self, conversation: Dict[str, Any]) -> List[Dict[str, str]]:
+    def _build_message_history(
+        self, conversation: Dict[str, Any]
+    ) -> List[Dict[str, str]]:
         """构建用于API的消息历史"""
         messages = [{"role": "system", "content": conversation["system_prompt"]}]
 
         for msg in conversation["messages"]:
             if msg["role"] in ["user", "assistant"]:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+                messages.append({"role": msg["role"], "content": msg["content"]})
 
         return messages
 
@@ -211,14 +222,18 @@ class ConversationService:
         model: str,
         messages: List[Dict[str, str]],
         temperature: float,
-        max_tokens: Optional[int]
+        max_tokens: Optional[int],
     ) -> AsyncGenerator[str, None]:
         """流式生成聊天响应"""
         if provider == "deepseek":
-            async for chunk in self._stream_deepseek(messages, model):  # Removed temperature and max_tokens
+            async for chunk in self._stream_deepseek(
+                messages, model
+            ):  # Removed temperature and max_tokens
                 yield chunk
         elif provider == "openai":
-            async for chunk in self._stream_openai(messages, model, temperature, max_tokens):
+            async for chunk in self._stream_openai(
+                messages, model, temperature, max_tokens
+            ):
                 yield chunk
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -229,11 +244,13 @@ class ConversationService:
         model: str,
         messages: List[Dict[str, str]],
         temperature: float,
-        max_tokens: Optional[int]
+        max_tokens: Optional[int],
     ) -> str:
         """生成同步聊天响应"""
         if provider == "deepseek":
-            return await self._generate_deepseek(messages, model)  # Removed temperature and max_tokens
+            return await self._generate_deepseek(
+                messages, model
+            )  # Removed temperature and max_tokens
         elif provider == "openai":
             return await self._generate_openai(messages, model, temperature, max_tokens)
         else:
@@ -242,7 +259,7 @@ class ConversationService:
     async def _stream_deepseek(
         self,
         messages: List[Dict[str, str]],
-        model: str
+        model: str,
         # temperature: float,  # Removed unused parameter
         # max_tokens: Optional[int]  # Removed unused parameter
     ) -> AsyncGenerator[str, None]:
@@ -261,15 +278,12 @@ class ConversationService:
 
             # 完全按照用户示例的客户端创建
             client = OpenAI(
-                api_key=self.deepseek_api_key,
-                base_url="https://api.deepseek.com"
+                api_key=self.deepseek_api_key, base_url="https://api.deepseek.com"
             )
 
             # 完全按照用户示例的流式调用
             response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                stream=True
+                model=model_name, messages=messages, stream=True
             )
 
             for chunk in response:
@@ -282,7 +296,7 @@ class ConversationService:
     async def _generate_deepseek(
         self,
         messages: List[Dict[str, str]],
-        model: str
+        model: str,
         # temperature: float,  # Removed unused parameter
         # max_tokens: Optional[int]  # Removed unused parameter
     ) -> str:
@@ -301,15 +315,12 @@ class ConversationService:
 
             # 完全按照用户示例的客户端创建
             client = OpenAI(
-                api_key=self.deepseek_api_key,
-                base_url="https://api.deepseek.com"
+                api_key=self.deepseek_api_key, base_url="https://api.deepseek.com"
             )
 
             # 完全按照用户示例的同步调用
             response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                stream=False
+                model=model_name, messages=messages, stream=False
             )
 
             return response.choices[0].message.content
@@ -323,7 +334,7 @@ class ConversationService:
         messages: List[Dict[str, str]],
         model: str,
         temperature: float,
-        max_tokens: Optional[int]
+        max_tokens: Optional[int],
     ) -> AsyncGenerator[str, None]:
         """OpenAI流式响应"""
         if not self.openai_api_key:
@@ -337,7 +348,7 @@ class ConversationService:
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                stream=True
+                stream=True,
             )
 
             for chunk in stream:
@@ -354,7 +365,7 @@ class ConversationService:
         messages: List[Dict[str, str]],
         model: str,
         temperature: float,
-        max_tokens: Optional[int]
+        max_tokens: Optional[int],
     ) -> str:
         """OpenAI同步响应"""
         if not self.openai_api_key:
@@ -368,7 +379,7 @@ class ConversationService:
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                stream=False
+                stream=False,
             )
 
             return response.choices[0].message.content
@@ -376,7 +387,9 @@ class ConversationService:
             logger.error(f"OpenAI generation error: {str(e)}")
             raise
 
-    async def _load_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+    async def _load_conversation(
+        self, conversation_id: str
+    ) -> Optional[Dict[str, Any]]:
         """加载对话数据"""
         try:
             file_path = os.path.join(self.storage_dir, f"{conversation_id}.json")
@@ -387,7 +400,9 @@ class ConversationService:
             logger.error(f"Error loading conversation {conversation_id}: {str(e)}")
         return None
 
-    async def _save_conversation(self, conversation_id: str, conversation_data: Dict[str, Any]):
+    async def _save_conversation(
+        self, conversation_id: str, conversation_data: Dict[str, Any]
+    ):
         """保存对话数据"""
         try:
             file_path = os.path.join(self.storage_dir, f"{conversation_id}.json")

@@ -12,8 +12,8 @@ from typing import Dict, Any
 logger = logging.getLogger(__name__)
 
 # Global server instance
-mcp_server_thread = None # This will be the thread for mcp_http_handler
-mcp_server_instance = None # This will be the VerseMindMCPServer instance
+mcp_server_thread = None  # This will be the thread for mcp_http_handler
+mcp_server_instance = None  # This will be the VerseMindMCPServer instance
 
 # Global data for VerseMind-RAG
 versemind_data = {
@@ -37,7 +37,10 @@ def start_mcp_server(port: int = 3006, host: str = "0.0.0.0") -> bool:
     # Import the new mcp_http_handler and the versemind_native_mcp server
     try:
         from app.mcp.versemind_native_mcp import get_global_server
-        from app.mcp.mcp_http_handler import start_server_thread as start_http_server_thread
+        from app.mcp.mcp_http_handler import (
+            start_server_thread as start_http_server_thread,
+        )
+
         logger.info("Successfully imported MCP components for http.server approach.")
     except ImportError as e:
         logger.error(f"Failed to import MCP components: {e}")
@@ -55,9 +58,11 @@ def start_mcp_server(port: int = 3006, host: str = "0.0.0.0") -> bool:
         # This is crucial because mcp_http_handler will use this shared instance.
         logger.info("Initializing/retrieving global VerseMindMCPServer instance...")
         server_instance = get_global_server()
-        mcp_server_instance = server_instance # Store for global access if needed
+        mcp_server_instance = server_instance  # Store for global access if needed
         logger.info(f"VerseMindMCPServer instance {id(mcp_server_instance)} is ready.")
-        logger.info("Tools should be registered by the VerseMindMCPServer upon its initialization.")
+        logger.info(
+            "Tools should be registered by the VerseMindMCPServer upon its initialization."
+        )
 
         # Now, start the mcp_http_handler, which will run its own HTTP server
         # and use the global_server_instance for handling MCP calls.
@@ -66,7 +71,7 @@ def start_mcp_server(port: int = 3006, host: str = "0.0.0.0") -> bool:
         # We just need to call it and store the thread if we want to manage it (e.g., for stopping).
         # The backup's start_server_thread in mcp_http_handler returns the thread.
         http_thread = start_http_server_thread(host, port)
-        mcp_server_thread = http_thread # Store the thread from mcp_http_handler
+        mcp_server_thread = http_thread  # Store the thread from mcp_http_handler
 
         if mcp_server_thread and mcp_server_thread.is_alive():
             logger.info("MCP HTTP handler thread started successfully.")
@@ -78,6 +83,7 @@ def start_mcp_server(port: int = 3006, host: str = "0.0.0.0") -> bool:
     except Exception as e:
         logger.error(f"Failed to start MCP server: {str(e)}")
         import traceback
+
         logger.error(traceback.format_exc())
         return False
 
@@ -97,21 +103,25 @@ def stop_mcp_server() -> bool:
     if mcp_server_thread and mcp_server_thread.is_alive():
         logger.info("Stopping MCP HTTP handler server...")
         try:
-            stop_http_server() # Call the stop function from mcp_http_handler
+            stop_http_server()  # Call the stop function from mcp_http_handler
             # The stop_server in http_handler should handle thread joining.
             logger.info("MCP HTTP handler server signaled to stop.")
             # Give it a moment to shut down
             if mcp_server_thread.is_alive():
-                 mcp_server_thread.join(timeout=5) # Wait for thread from http_handler
+                mcp_server_thread.join(timeout=5)  # Wait for thread from http_handler
             if not mcp_server_thread.is_alive():
                 logger.info("MCP HTTP handler thread has terminated.")
                 stopped_gracefully = True
             else:
-                logger.warning("MCP HTTP handler thread did not terminate after stop signal.")
+                logger.warning(
+                    "MCP HTTP handler thread did not terminate after stop signal."
+                )
         except Exception as e:
             logger.error(f"Error stopping MCP HTTP handler: {e}")
     else:
-        logger.warning("MCP server (http_handler thread) is not running or thread object unavailable.")
+        logger.warning(
+            "MCP server (http_handler thread) is not running or thread object unavailable."
+        )
         # If thread is None but server might be running (e.g. after a restart),
         # we might not be able to stop it this way.
 
@@ -163,7 +173,6 @@ def set_versemind_data(
 
         # Set global variables in the main module for backward compatibility
 
-
         # Also update in the server instance if it exists - VerseMindMCPServer does not store this directly
         # global mcp_server_instance
         # if mcp_server_instance:
@@ -214,8 +223,13 @@ def get_versemind_data() -> Dict[str, Any]:
         #     return data
 
         # Fallback to global versemind data
-        if versemind_data.get("title") is not None or versemind_data.get("reference") is not None:
-            return versemind_data.copy() # Return a copy to prevent external modification
+        if (
+            versemind_data.get("title") is not None
+            or versemind_data.get("reference") is not None
+        ):
+            return (
+                versemind_data.copy()
+            )  # Return a copy to prevent external modification
 
         # Last resort: try main module - Removing direct __main__ access as it's less reliable
         # import __main__
@@ -226,8 +240,15 @@ def get_versemind_data() -> Dict[str, Any]:
         #     "last_updated": None,
         #     "knowledge_bases": {},
         # }
-        logger.warning("No VerseMind data available in mcp_server_manager.versemind_data")
-        return {"title": None, "reference": None, "last_updated": None, "knowledge_bases": {}}
+        logger.warning(
+            "No VerseMind data available in mcp_server_manager.versemind_data"
+        )
+        return {
+            "title": None,
+            "reference": None,
+            "last_updated": None,
+            "knowledge_bases": {},
+        }
     except Exception as e:
         logger.error(f"Error getting VerseMind data: {str(e)}")
         return {"title": None, "reference": None, "error": str(e)}

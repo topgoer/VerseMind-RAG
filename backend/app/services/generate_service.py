@@ -3,8 +3,8 @@ import datetime
 import json
 import os
 import uuid
-from typing import Any, Dict, Optional, AsyncGenerator # Added AsyncGenerator
-import toml # Added import
+from typing import Any, Dict, Optional, AsyncGenerator  # Added AsyncGenerator
+import toml  # Added import
 
 from app.api.config import get_config_path
 from app.core.logger import get_logger_with_env_level
@@ -53,7 +53,11 @@ class GenerateService:
 
         # Create LLM service instances
         self.openai_llm = LLMService(api_key=self.openai_api_key, model_type="openai")
-        self.deepseek_llm = LLMService(api_key=self.deepseek_api_key, api_base=self.deepseek_api_base, model_type="deepseek")
+        self.deepseek_llm = LLMService(
+            api_key=self.deepseek_api_key,
+            api_base=self.deepseek_api_base,
+            model_type="deepseek",
+        )
         self.ollama_llm = LLMService(api_base=self.ollama_base_url, model_type="ollama")
 
         # 只读取一次 config.toml，使用 config.py 的 get_config_path
@@ -640,9 +644,7 @@ class GenerateService:
             )
         elif provider in ["deepseek", "siliconflow"]:
             # Call _generate_with_deepseek without temperature and max_tokens
-            return self._generate_with_deepseek(
-                prompt, model, image_data=image_data
-            )
+            return self._generate_with_deepseek(prompt, model, image_data=image_data)
         else:
             raise ValueError(f"不支持的提供商: {provider}")
 
@@ -665,7 +667,7 @@ class GenerateService:
             temperature=temperature,
             max_tokens=max_tokens,
             image_data=image_data,
-            supports_vision=supports_vision
+            supports_vision=supports_vision,
         )
 
     def _generate_with_openai(
@@ -687,7 +689,7 @@ class GenerateService:
             temperature=temperature,
             max_tokens=max_tokens,
             image_data=image_data,
-            supports_vision=supports_vision
+            supports_vision=supports_vision,
         )
 
     def _generate_with_deepseek(
@@ -699,9 +701,7 @@ class GenerateService:
         """使用DeepSeek生成文本"""
         # 使用统一的LLM服务接口
         return self.deepseek_llm.generate(
-            prompt=prompt,
-            model=model,
-            image_data=image_data
+            prompt=prompt, model=model, image_data=image_data
         )
 
     async def generate_text_stream(
@@ -831,9 +831,7 @@ class GenerateService:
         """
         # 使用统一的LLM服务接口进行流式生成
         async for chunk in self.deepseek_llm.generate_stream(
-            prompt=prompt,
-            model=model,
-            image_data=image_data
+            prompt=prompt, model=model, image_data=image_data
         ):
             yield chunk
 
@@ -856,7 +854,7 @@ class GenerateService:
             temperature=temperature,
             max_tokens=max_tokens,
             image_data=image_data,
-            supports_vision=supports_vision
+            supports_vision=supports_vision,
         ):
             yield chunk
 
@@ -879,7 +877,7 @@ class GenerateService:
             temperature=temperature,
             max_tokens=max_tokens,
             image_data=image_data,
-            supports_vision=supports_vision
+            supports_vision=supports_vision,
         ):
             yield chunk
 

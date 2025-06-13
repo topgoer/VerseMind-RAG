@@ -226,7 +226,9 @@ api_router.include_router(embeddings.router, prefix="/embeddings", tags=["embedd
 api_router.include_router(index.router, prefix="/indices", tags=["indices"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(generate.router, prefix="/generate", tags=["generate"])
-api_router.include_router(conversation.router, prefix="/conversation", tags=["conversation"])
+api_router.include_router(
+    conversation.router, prefix="/conversation", tags=["conversation"]
+)
 # api_router.include_router(test_deepseek.router, prefix="/test-deepseek", tags=["test-deepseek"])  # 临时测试端点
 api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
 api_router.include_router(debug_storage.router, prefix="/debug", tags=["debug"])

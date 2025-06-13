@@ -8,19 +8,29 @@ from pymilvus import connections, utility, Collection
 # 配置日志格式，移除时间戳
 logging.basicConfig(
     level=logging.INFO,
-    format='%(message)s'  # 只显示消息，不显示时间戳和日志级别
+    format="%(message)s",  # 只显示消息，不显示时间戳和日志级别
 )
 
 # 加载环境变量
 load_dotenv()
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description='List all Milvus collections')
-    parser.add_argument('--host', type=str, default=os.getenv('MILVUS_HOST', 'localhost'),
-                      help='Milvus server address')
-    parser.add_argument('--port', type=int, default=int(os.getenv('MILVUS_PORT', '19530')),
-                      help='Milvus server port')
+    parser = argparse.ArgumentParser(description="List all Milvus collections")
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.getenv("MILVUS_HOST", "localhost"),
+        help="Milvus server address",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("MILVUS_PORT", "19530")),
+        help="Milvus server port",
+    )
     return parser.parse_args()
+
 
 def main():
     args = parse_args()
@@ -43,7 +53,7 @@ def main():
             logging.info("   Fields:")
             for field in fields:
                 field_info = f"   - {field.name}: {field.dtype}"
-                if hasattr(field, 'max_length'):
+                if hasattr(field, "max_length"):
                     field_info += f" (max_length={field.max_length})"
                 if field.is_primary:
                     field_info += " [Primary Key]"
@@ -57,6 +67,7 @@ def main():
         sys.exit(1)
     finally:
         connections.disconnect("default")
+
 
 if __name__ == "__main__":
     main()

@@ -26,17 +26,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Add the backend directory to the Python path
-backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
 try:
     # Import the fixed MCP server with the singleton pattern
-    from app.mcp.versemind_native_mcp import get_global_server # MODIFIED_LINE to versemind_native_mcp
+    from app.mcp.versemind_native_mcp import (
+        get_global_server,
+    )  # MODIFIED_LINE to versemind_native_mcp
+
     logger.info("Successfully imported fixed MCP Server with singleton pattern")
 except ImportError as e:
     logger.error(f"Failed to import fixed MCP Server: {e}")
     sys.exit(1)
+
 
 def _serialize_tool_result(tool_result):
     """Convert CallToolResult or plain result into JSON-serializable dict."""
@@ -49,6 +53,7 @@ def _serialize_tool_result(tool_result):
                 serialized.append(item)
         return {"content": serialized}
     return tool_result
+
 
 class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
     """HTTP handler for MCP requests"""
@@ -93,15 +98,12 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                     "result": {
                         "capabilities": {
                             "toolCallsSupported": True,
-                            "streamingSupported": True
+                            "streamingSupported": True,
                         },
-                        "serverInfo": {
-                            "name": "versemind-rag",
-                            "version": "1.0.0"
-                        }
-                    }
+                        "serverInfo": {"name": "versemind-rag", "version": "1.0.0"},
+                    },
                 }
-            elif method == "listTools": # Matches backup's handler
+            elif method == "listTools":  # Matches backup's handler
                 server = get_global_server()
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -110,15 +112,17 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 result = {
                     "jsonrpc": "2.0",
                     "id": request_id,
-                    "result": {"tools": tool_attrs}
+                    "result": {"tools": tool_attrs},
                 }
-            elif method == "callTool": # Matches backup's handler
-                tool_name = params.get("name") # Backup used "name"
-                tool_args = params.get("arguments", {}) # Backup used "arguments"
+            elif method == "callTool":  # Matches backup's handler
+                tool_name = params.get("name")  # Backup used "name"
+                tool_args = params.get("arguments", {})  # Backup used "arguments"
                 server = get_global_server()
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                tool_result = loop.run_until_complete(server.call_tool(tool_name, tool_args))
+                tool_result = loop.run_until_complete(
+                    server.call_tool(tool_name, tool_args)
+                )
                 loop.close()
                 tool_body = _serialize_tool_result(tool_result)
                 result = {"jsonrpc": "2.0", "id": request_id, "result": tool_body}
@@ -126,7 +130,7 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 result = {
                     "jsonrpc": "2.0",
                     "id": request_id,
-                    "error": {"code": -32601, "message": f"Method {method} not found"}
+                    "error": {"code": -32601, "message": f"Method {method} not found"},
                 }
 
             self.send_response(200)
@@ -144,26 +148,27 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             error_result = {
                 "jsonrpc": "2.0",
                 "id": request.get("id") if "request" in locals() else None,
-                "error": {
-                    "code": -32000,
-                    "message": str(e)
-                }
+                "error": {"code": -32000, "message": str(e)},
             }
             self.wfile.write(json.dumps(error_result).encode("utf-8"))
 
+
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Thread-per-connection HTTP server"""
+
     pass
+
 
 def _mcp_http_handler_factory(*args, **kwargs):
     return MCPHTTPRequestHandler(*args, **kwargs)
+
 
 def run_mcp_http_server(host="0.0.0.0", port=3006):
     """Run the MCP HTTP server"""
     handler = _mcp_http_handler_factory
     server = ThreadedHTTPServer((host, port), handler)
     logger.info(f"Starting Fixed MCP HTTP server on http://{host}:{port}/mcp")
-    get_global_server() # Initialize server instance
+    get_global_server()  # Initialize server instance
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -172,19 +177,20 @@ def run_mcp_http_server(host="0.0.0.0", port=3006):
         server.server_close()
         logger.info("MCP HTTP server stopped")
 
+
 def start_server_thread(host="0.0.0.0", port=3006):
     """Start the MCP HTTP server in a separate thread"""
-    server_thread = Thread(
-        target=run_mcp_http_server,
-        args=(host, port),
-        daemon=True
-    )
+    server_thread = Thread(target=run_mcp_http_server, args=(host, port), daemon=True)
     server_thread.start()
-    logger.info(f"MCP HTTP server thread started, listening on {host}:{port}") # Added log
+    logger.info(
+        f"MCP HTTP server thread started, listening on {host}:{port}"
+    )  # Added log
     return server_thread
+
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Fixed VerseMind-RAG MCP HTTP Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=3006, help="Port to listen on")
