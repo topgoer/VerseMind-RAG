@@ -119,19 +119,26 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 # Try to get tool_name from "toolName" first, then fall back to "name"
                 tool_name = params.get("toolName")
                 if not tool_name:
-                    tool_name = params.get("name") # Fallback to "name"
+                    tool_name = params.get("name")  # Fallback to "name"
 
                 tool_args = params.get("arguments", {})
 
                 if not tool_name:
-                    logger.error("callTool: 'toolName' or 'name' is missing or empty in request params.") # Updated log message
+                    logger.error(
+                        "callTool: 'toolName' or 'name' is missing or empty in request params."
+                    )  # Updated log message
                     result = {
                         "jsonrpc": "2.0",
                         "id": request_id,
-                        "error": {"code": -32602, "message": "Invalid params: 'toolName' or 'name' is missing or empty in request."}, # Updated error message
+                        "error": {
+                            "code": -32602,
+                            "message": "Invalid params: 'toolName' or 'name' is missing or empty in request.",
+                        },  # Updated error message
                     }
                 else:
-                    logger.debug(f"callTool: extracted tool_name: '{tool_name}', tool_args: {json.dumps(tool_args)}")
+                    logger.debug(
+                        f"callTool: extracted tool_name: '{tool_name}', tool_args: {json.dumps(tool_args)}"
+                    )
                     server = get_global_server()
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -144,24 +151,40 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
 
                     if isinstance(raw_tool_result, dict) and "error" in raw_tool_result:
                         # Handle errors returned by server.callTool (e.g., tool not found, execution error)
-                        error_message = raw_tool_result.get("error", "Unknown server error during tool execution.")
-                        logger.error(f"callTool: Error from server.callTool for '{tool_name}': {error_message}")
+                        error_message = raw_tool_result.get(
+                            "error", "Unknown server error during tool execution."
+                        )
+                        logger.error(
+                            f"callTool: Error from server.callTool for '{tool_name}': {error_message}"
+                        )
                         result = {
                             "jsonrpc": "2.0",
                             "id": request_id,
-                            "error": {"code": -32000, "message": error_message}, # Generic server error for tool issues
+                            "error": {
+                                "code": -32000,
+                                "message": error_message,
+                            },  # Generic server error for tool issues
                         }
                     elif isinstance(raw_tool_result, CallToolResult):
                         # Successful tool execution
                         tool_body = _serialize_tool_result(raw_tool_result)
-                        result = {"jsonrpc": "2.0", "id": request_id, "result": tool_body}
-                    else:
-                        # Unexpected result type from server.callTool
-                        logger.error(f"callTool: Unexpected result type from server.callTool for '{tool_name}': {type(raw_tool_result)}")
                         result = {
                             "jsonrpc": "2.0",
                             "id": request_id,
-                            "error": {"code": -32000, "message": "Internal server error: Unexpected tool result type."},
+                            "result": tool_body,
+                        }
+                    else:
+                        # Unexpected result type from server.callTool
+                        logger.error(
+                            f"callTool: Unexpected result type from server.callTool for '{tool_name}': {type(raw_tool_result)}"
+                        )
+                        result = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": -32000,
+                                "message": "Internal server error: Unexpected tool result type.",
+                            },
                         }
             else:
                 result = {

@@ -24,6 +24,7 @@ N8N_DOWNLOAD_DIR = "D:/n8n-local-files"
 # 简单的内存任务状态存储
 task_status_store = {}
 
+
 class TaskStatus:
     def __init__(self, task_id: str, biz: str):
         self.task_id = task_id
@@ -34,15 +35,20 @@ class TaskStatus:
         self.files = []
         self.message = "任务正在执行中..."
 
+
 class WechatDownloadRequest(BaseModel):
     """微信公众号下载请求模型"""
+
     biz: str = Field(..., description="微信公众号的biz参数", min_length=1)
+
 
 class WechatDownloadResponse(BaseModel):
     """微信公众号下载响应模型"""
+
     success: bool
     message: str
     task_id: Optional[str] = None
+
 
 async def trigger_n8n_workflow(biz: str) -> Dict[str, Any]:
     """
@@ -63,23 +69,14 @@ async def trigger_n8n_workflow(biz: str) -> Dict[str, Any]:
 
     if not n8n_webhook_url:
         logger.error("N8N_WECHAT_DOWNLOAD_URL环境变量未设置")
-        raise HTTPException(
-            status_code=500,
-            detail="N8N工作流URL未配置，请联系管理员"
-        )
+        raise HTTPException(status_code=500, detail="N8N工作流URL未配置，请联系管理员")
 
     if not jizhile_api_key:
         logger.error("JIZHILE_API_KEY环境变量未设置")
-        raise HTTPException(
-            status_code=500,
-            detail="极致了API密钥未配置，请联系管理员"
-        )
+        raise HTTPException(status_code=500, detail="极致了API密钥未配置，请联系管理员")
 
     # 准备发送给n8n的数据
-    payload = {
-        "biz": biz,
-        "jizhile_key": jizhile_api_key
-    }
+    payload = {"biz": biz, "jizhile_key": jizhile_api_key}
 
     try:
         # 调用n8n的webhook
@@ -90,7 +87,7 @@ async def trigger_n8n_workflow(biz: str) -> Dict[str, Any]:
             response = await client.post(
                 n8n_webhook_url,
                 json=payload,
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             )
 
             # 检查响应状态
@@ -104,28 +101,23 @@ async def trigger_n8n_workflow(biz: str) -> Dict[str, Any]:
 
     except httpx.TimeoutException:
         logger.error(f"调用n8n工作流超时: {n8n_webhook_url}")
-        raise HTTPException(
-            status_code=504,
-            detail="n8n工作流调用超时，请稍后重试"
-        )
+        raise HTTPException(status_code=504, detail="n8n工作流调用超时，请稍后重试")
     except httpx.HTTPStatusError as e:
         logger.error(f"n8n工作流返回错误状态: {e.response.status_code}")
         logger.error(f"错误响应内容: {e.response.text}")
         raise HTTPException(
-            status_code=502,
-            detail=f"n8n工作流执行失败: HTTP {e.response.status_code}"
+            status_code=502, detail=f"n8n工作流执行失败: HTTP {e.response.status_code}"
         )
     except Exception as e:
         logger.error(f"调用n8n工作流时发生未知错误: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"调用n8n工作流时发生错误: {str(e)}"
+            status_code=500, detail=f"调用n8n工作流时发生错误: {str(e)}"
         )
+
 
 @router.post("/trigger-wechat-download", response_model=WechatDownloadResponse)
 async def trigger_wechat_download(
-    request: WechatDownloadRequest,
-    background_tasks: BackgroundTasks
+    request: WechatDownloadRequest, background_tasks: BackgroundTasks
 ) -> WechatDownloadResponse:
     """
     触发微信公众号文章下载工作流
@@ -142,27 +134,27 @@ async def trigger_wechat_download(
 
         # 验证biz参数格式（基本验证）
         if not request.biz.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="biz参数不能为空"
-            )
+            raise HTTPException(status_code=400, detail="biz参数不能为空")
 
         # 调用n8n工作流
         await trigger_n8n_workflow(request.biz.strip())
 
         # 生成任务ID（可以使用UUID或其他方式）
         import uuid
+
         task_id = str(uuid.uuid4())
 
         # 存储任务状态
-        task_status_store[task_id] = TaskStatus(task_id=task_id, biz=request.biz.strip())
+        task_status_store[task_id] = TaskStatus(
+            task_id=task_id, biz=request.biz.strip()
+        )
 
         logger.info(f"微信公众号下载任务已启动: task_id={task_id}, biz={request.biz}")
 
         return WechatDownloadResponse(
             success=True,
             message="微信公众号文章下载任务已成功启动，请稍后查看下载结果",
-            task_id=task_id
+            task_id=task_id,
         )
 
     except HTTPException:
@@ -170,10 +162,8 @@ async def trigger_wechat_download(
         raise
     except Exception as e:
         logger.error(f"处理微信公众号下载请求时发生错误: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"处理请求时发生内部错误: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"处理请求时发生内部错误: {str(e)}")
+
 
 @router.get("/health")
 async def health_check():
@@ -183,11 +173,8 @@ async def health_check():
     Returns:
         Dict: 服务状态信息
     """
-    return {
-        "status": "healthy",
-        "service": "n8n-integration",
-        "version": "1.0.0"
-    }
+    return {"status": "healthy", "service": "n8n-integration", "version": "1.0.0"}
+
 
 @router.get("/download-files", response_model=List[dict])
 async def get_download_files():
@@ -204,13 +191,17 @@ async def get_download_files():
             file_path = os.path.join(download_dir, filename)
             if os.path.isfile(file_path):
                 stat = os.stat(file_path)
-                files.append({
-                    "filename": filename,
-                    "path": file_path,
-                    "size": stat.st_size,
-                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat()
-                })
+                files.append(
+                    {
+                        "filename": filename,
+                        "path": file_path,
+                        "size": stat.st_size,
+                        "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                        "modified_at": datetime.fromtimestamp(
+                            stat.st_mtime
+                        ).isoformat(),
+                    }
+                )
 
         # 按修改时间排序，最新的在前
         files.sort(key=lambda x: x["modified_at"], reverse=True)
@@ -219,6 +210,7 @@ async def get_download_files():
     except Exception as e:
         logger.error(f"获取下载文件列表失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取下载文件列表失败: {str(e)}")
+
 
 @router.get("/recent-downloads", response_model=List[dict])
 async def get_recent_downloads(minutes: int = 10):
@@ -234,7 +226,9 @@ async def get_recent_downloads(minutes: int = 10):
         cutoff_time = datetime.now() - timedelta(minutes=minutes)
         recent_files = []
 
-        logger.info(f"检查最近{minutes}分钟的下载文件，截止时间: {cutoff_time.isoformat()}")
+        logger.info(
+            f"检查最近{minutes}分钟的下载文件，截止时间: {cutoff_time.isoformat()}"
+        )
 
         for filename in os.listdir(download_dir):
             file_path = os.path.join(download_dir, filename)
@@ -248,10 +242,12 @@ async def get_recent_downloads(minutes: int = 10):
                         "path": file_path,
                         "size": stat.st_size,
                         "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                        "modified_at": modified_time.isoformat()
+                        "modified_at": modified_time.isoformat(),
                     }
                     recent_files.append(file_info)
-                    logger.info(f"发现最近下载的文件: {filename}, 大小: {stat.st_size}字节, 修改时间: {modified_time.isoformat()}")
+                    logger.info(
+                        f"发现最近下载的文件: {filename}, 大小: {stat.st_size}字节, 修改时间: {modified_time.isoformat()}"
+                    )
 
         # 按修改时间排序，最新的在前
         recent_files.sort(key=lambda x: x["modified_at"], reverse=True)
@@ -268,6 +264,7 @@ async def get_recent_downloads(minutes: int = 10):
     except Exception as e:
         logger.error(f"获取最近下载文件失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取最近下载文件失败: {str(e)}")
+
 
 def _check_recent_files_for_task(task: TaskStatus) -> List[dict]:
     """
@@ -288,16 +285,21 @@ def _check_recent_files_for_task(task: TaskStatus) -> List[dict]:
             modified_time = datetime.fromtimestamp(stat.st_mtime)
 
             if modified_time > cutoff_time:
-                recent_files.append({
-                    "filename": filename,
-                    "path": file_path,
-                    "size": stat.st_size,
-                    "modified_at": modified_time.isoformat()
-                })
+                recent_files.append(
+                    {
+                        "filename": filename,
+                        "path": file_path,
+                        "size": stat.st_size,
+                        "modified_at": modified_time.isoformat(),
+                    }
+                )
 
     return recent_files
 
-def _update_task_completion(task: TaskStatus, task_id: str, recent_files: List[dict]) -> None:
+
+def _update_task_completion(
+    task: TaskStatus, task_id: str, recent_files: List[dict]
+) -> None:
     """
     更新任务完成状态
     """
@@ -310,6 +312,7 @@ def _update_task_completion(task: TaskStatus, task_id: str, recent_files: List[d
         logger.info(f"✅ 任务 {task_id} 已完成，检测到 {len(recent_files)} 个文件")
         for file in recent_files:
             logger.info(f"  📄 {file['filename']} ({file['size']} 字节)")
+
 
 @router.get("/task-status/{task_id}")
 async def get_task_status(task_id: str):
@@ -332,13 +335,14 @@ async def get_task_status(task_id: str):
             "status": task.status,
             "biz": task.biz,
             "created_at": task.created_at.isoformat(),
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "completed_at": task.completed_at.isoformat()
+            if task.completed_at
+            else None,
             "message": task.message,
             "files": task.files,
-            "completed": task.status in ["completed", "failed"]
+            "completed": task.status in ["completed", "failed"],
         }
 
     except Exception as e:
         logger.error(f"获取任务状态失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取任务状态失败: {str(e)}")
-
