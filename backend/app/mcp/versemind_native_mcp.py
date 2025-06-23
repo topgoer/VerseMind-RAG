@@ -88,6 +88,7 @@ class VerseMindMCPServer:
         self._setup_model_tools()
         self._setup_index_tools()
         self._setup_connection_tools()
+        self._setup_query_with_llm_tool()  # Add this line
 
     def _setup_model_tools(self):
         """Set up model-related tools"""
@@ -126,7 +127,7 @@ class VerseMindMCPServer:
                     logger.debug(f"list_generation_models result: {result}")
                     return CallToolResult(
                         content=[
-                            TextContent(type="text", text=json.dumps(result, indent=2))
+                            TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))
                         ]
                     )
                 except Exception as e:
@@ -138,7 +139,7 @@ class VerseMindMCPServer:
                     return CallToolResult(
                         content=[
                             TextContent(
-                                type="text", text=json.dumps(error_result, indent=2)
+                                type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False)
                             )
                         ]
                     )
@@ -179,7 +180,7 @@ class VerseMindMCPServer:
 
                     return CallToolResult(
                         content=[
-                            TextContent(type="text", text=json.dumps(result, indent=2))
+                            TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))
                         ]
                     )
                 except Exception as e:
@@ -190,7 +191,7 @@ class VerseMindMCPServer:
                     return CallToolResult(
                         content=[
                             TextContent(
-                                type="text", text=json.dumps(error_result, indent=2)
+                                type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False)
                             )
                         ]
                     )
@@ -226,7 +227,7 @@ class VerseMindMCPServer:
 
                 return CallToolResult(
                     content=[
-                        TextContent(type="text", text=json.dumps(result, indent=2))
+                        TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))
                     ]
                 )
             except Exception as e:
@@ -237,10 +238,13 @@ class VerseMindMCPServer:
                 return CallToolResult(
                     content=[
                         TextContent(
-                            type="text", text=json.dumps(error_result, indent=2)
+                            type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False)
                         )
                     ]
                 )
+        
+        self._tool_funcs["list_indices"] = list_indices # Add this line
+        logger.info("list_indices tool registered for custom dispatch.") # Optional: add a log
 
     def _setup_search_tools(self):
         """Set up search-related tools"""
@@ -248,7 +252,20 @@ class VerseMindMCPServer:
 
         @self.server.call_tool()
         async def search_documents(arguments: Dict[str, Any]) -> CallToolResult:
-            """Search through documents using vector similarity"""
+            """
+            Search through documents using vector similarity.
+
+            Args:
+                arguments (Dict[str, Any]): A dictionary of arguments. Expected keys:
+                    query (str): The search query.
+                    index_id_or_collection (str, optional): Specifies the search scope.
+                        - To search within a specific document: "doc:<document_id>"
+                        - To search within a specific collection/index: "col:<collection_name>"
+                        - For global search or to use the default index: "default" or omit.
+                        Defaults to "default".
+                    top_k (int, optional): Number of results to retrieve. Defaults to 3.
+                    similarity_threshold (float, optional): Minimum similarity for results. Defaults to 0.5.
+            """
             try:
                 query = arguments.get("query", "")
                 index_id_or_collection = arguments.get(
@@ -278,7 +295,7 @@ class VerseMindMCPServer:
 
                 return CallToolResult(
                     content=[
-                        TextContent(type="text", text=json.dumps(result, indent=2))
+                        TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))
                     ]
                 )
             except Exception as e:
@@ -289,7 +306,7 @@ class VerseMindMCPServer:
                 return CallToolResult(
                     content=[
                         TextContent(
-                            type="text", text=json.dumps(error_result, indent=2)
+                            type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False)
                         )
                     ]
                 )
@@ -316,7 +333,7 @@ class VerseMindMCPServer:
 
                 return CallToolResult(
                     content=[
-                        TextContent(type="text", text=json.dumps(result, indent=2))
+                        TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))
                     ]
                 )
             except Exception as e:
@@ -327,7 +344,7 @@ class VerseMindMCPServer:
                 return CallToolResult(
                     content=[
                         TextContent(
-                            type="text", text=json.dumps(error_result, indent=2)
+                            type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False)
                         )
                     ]
                 )
@@ -335,8 +352,199 @@ class VerseMindMCPServer:
         # track tool for direct invocation
         self._tool_funcs["list_documents"] = list_documents
 
+        @self.server.call_tool()
+        async def get_document_info(arguments: Dict[str, Any]) -> CallToolResult:
+            """Get detailed information about a specific document"""
+            try:
+                document_id = arguments.get("document_id")
+                if not document_id:
+                    return CallToolResult(
+                        content=[
+                            TextContent(
+                                type="text",
+                                text=json.dumps(
+                                    {"status": "error", "message": "document_id is required."},
+                                    indent=2,
+                                    ensure_ascii=False,
+                                ),
+                            )
+                        ]
+                    )
+
+                response = requests.get(
+                    f"{self.api_base}/documents/info/{document_id}", timeout=30
+                )
+                data = response.json()
+
+                if response.status_code != 200:
+                    return CallToolResult(
+                        content=[
+                            TextContent(
+                                type="text",
+                                text=json.dumps(
+                                    {"status": "error", "message": data.get("message", "Unknown error")},
+                                    indent=2,
+                                    ensure_ascii=False,
+                                ),
+                            )
+                        ]
+                    )
+
+                result = {
+                    "status": "success",
+                    "document": data,
+                }
+
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))
+                    ]
+                )
+            except Exception as e:
+                error_result = {
+                    "status": "error",
+                    "message": f"Failed to get document info: {str(e)}",
+                }
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False))
+                    ]
+                )
+
+        # track tool for direct invocation
+        self._tool_funcs["get_document_info"] = get_document_info
+
+    def _setup_query_with_llm_tool(self):
+        """Set up the tool to query knowledge base and generate answer with LLM."""
+        logger.debug("Setting up query_knowledge_base_with_llm tool...")
+
+        @self.server.call_tool()
+        async def query_knowledge_base_with_llm(arguments: Dict[str, Any]) -> CallToolResult:
+            """
+            Queries the knowledge base with a user's question, then uses the default LLM 
+            to generate an answer based on the search results.
+
+            Args:
+                arguments (Dict[str, Any]): A dictionary of arguments. Expected keys:
+                    query (str): The user's question.
+                    index_id_or_collection (str, optional): Specifies the search scope.
+                        - To search within a specific document: "doc:<document_id>"
+                        - To search within a specific collection/index: "col:<collection_name>"
+                        - For global search or to use the default index: "default" or omit.
+                        Defaults to "default".
+                    top_k (int, optional): Number of results to retrieve. Defaults to 3.
+                    similarity_threshold (float, optional): Minimum similarity for results. Defaults to 0.5.
+            """
+            try:
+                user_query = arguments.get("query", "")
+                index_id_or_collection = arguments.get("index_id_or_collection", "default")
+                top_k = arguments.get("top_k", 3)
+                similarity_threshold = arguments.get("similarity_threshold", 0.5)
+
+                if not user_query:
+                    return CallToolResult(
+                        content=[
+                            TextContent(type="text", text=json.dumps({"status": "error", "message": "Query cannot be empty."}, indent=2, ensure_ascii=False))
+                        ]
+                    )
+
+                # Step 1: Search documents (reuse existing logic or call the search endpoint)
+                logger.info(f"Searching documents for query: {user_query}")
+                search_response = requests.post(
+                    f"{self.api_base}/search/",
+                    json={
+                        "index_id_or_collection": index_id_or_collection,
+                        "query": user_query,
+                        "top_k": top_k,
+                        "similarity_threshold": similarity_threshold,
+                    },
+                    timeout=30,
+                )
+                search_data = search_response.json()
+
+                if search_response.status_code != 200 or search_data.get("status") == "error":
+                    logger.error(f"Search failed: {search_data.get('message')}")
+                    return CallToolResult(
+                        content=[
+                            TextContent(type="text", text=json.dumps({"status": "error", "message": f"Search failed: {search_data.get('message', 'Unknown error')}"}, indent=2, ensure_ascii=False))
+                        ]
+                    )
+
+                search_results = search_data.get("results", [])
+                context = "\n\n".join([result.get("text", "") for result in search_results])
+
+                if not context:
+                    logger.info("No relevant context found from search.")
+                    # Optionally, you could still send the query to the LLM without context
+                    # or return a message indicating no context was found.
+                    # For now, let's proceed to LLM with the original query only if no context.
+
+                # Step 2: Generate answer using LLM with context
+                logger.info("Generating answer with LLM...")
+                
+                # Construct prompt for LLM
+                # You might want to refine this prompt engineering
+                prompt = f"Based on the following context, please answer the question.\n\nContext:\n{context}\n\nQuestion: {user_query}\n\nAnswer:"
+                if not search_results: # If no context, just ask the question
+                    prompt = f"Please answer the following question: {user_query}\n\nAnswer:"
+
+                # Assuming a /api/generate/text endpoint similar to your other services
+                # You might need to adjust the payload and endpoint based on your actual backend implementation
+                generation_payload = {
+                    "prompt": prompt,
+                    "model_id": "default", # Or allow specifying model via arguments
+                    "stream": False
+                    # Add other parameters like max_tokens, temperature if needed
+                }
+                
+                logger.debug(f"Sending to generation endpoint: {self.api_base}/generate/text with payload: {generation_payload}")
+                generation_response = requests.post(
+                    f"{self.api_base}/generate/text", # Adjust if your generation endpoint is different
+                    json=generation_payload,
+                    timeout=60, # Generation can take longer
+                )
+                generation_data = generation_response.json()
+
+                if generation_response.status_code != 200:
+                    logger.error(f"LLM generation failed: {generation_data.get('detail', 'Unknown error')}")
+                    return CallToolResult(
+                        content=[
+                            TextContent(type="text", text=json.dumps({"status": "error", "message": f"LLM generation failed: {generation_data.get('detail', 'Unknown error')}"}, indent=2, ensure_ascii=False))
+                        ]
+                    )
+
+                llm_answer = generation_data.get("text", "No answer generated.")
+
+                final_result = {
+                    "status": "success",
+                    "user_query": user_query,
+                    "retrieved_context_count": len(search_results),
+                    "llm_answer": llm_answer,
+                }
+
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=json.dumps(final_result, indent=2, ensure_ascii=False))
+                    ]
+                )
+
+            except Exception as e:
+                logger.error(f"Error in query_knowledge_base_with_llm: {e}", exc_info=True)
+                error_result = {
+                    "status": "error",
+                    "message": f"An unexpected error occurred: {str(e)}",
+                }
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False))
+                    ]
+                )
+        
+        self._tool_funcs["query_knowledge_base_with_llm"] = query_knowledge_base_with_llm
+        logger.info("query_knowledge_base_with_llm tool registered.")
+
     def _setup_connection_tools(self):
-        """Set up connection testing tools"""
+        """Set up connection-related tools"""
         logger.debug("Setting up connection tools...")
 
         @self.server.call_tool()
@@ -352,7 +560,7 @@ class VerseMindMCPServer:
 
                 return CallToolResult(
                     content=[
-                        TextContent(type="text", text=json.dumps(result, indent=2))
+                        TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))
                     ]
                 )
             except Exception as e:
@@ -363,7 +571,7 @@ class VerseMindMCPServer:
                 return CallToolResult(
                     content=[
                         TextContent(
-                            type="text", text=json.dumps(error_result, indent=2)
+                            type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False)
                         )
                     ]
                 )
@@ -390,29 +598,40 @@ class VerseMindMCPServer:
             },
             {
                 "name": "search_documents",
-                "description": "Search through documents using vector similarity",
+                "description": "Search documents by vector similarity (scope: doc:<id>/col:<name>/default).",
             },
             {"name": "list_documents", "description": "List all uploaded documents"},
             {
+                "name": "get_document_info",
+                "description": "Get detailed information about a specific document",
+            },
+            {
                 "name": "test_connection",
                 "description": "Test connectivity to the VerseMind-RAG system",
+            },
+            {
+                "name": "query_knowledge_base_with_llm",
+                "description": "Queries knowledge base (scope: doc:<id>/col:<name>/default) and uses LLM for answers.",
             },
         ]
         logger.info(f"Retrieved {len(tools)} tools (hardcoded list for newer MCP SDK)")
         return tools
 
-    async def call_tool(self, tool_name: str, tool_args: Dict[str, Any]):
-        """Call a tool by name with arguments"""
-        logger.info(f"Invoking tool {tool_name} with arguments: {tool_args}")
-        func = self._tool_funcs.get(tool_name)
+    async def callTool(self, toolName: str, arguments: Dict[str, Any]): # type: ignore[override] # noqa: N802 # NOSONAR
+        """Call a tool by name with arguments. Method name uses camelCase to match JSON-RPC spec from clients like n8n.
+           Parameter 'toolName' uses camelCase for the same reason.
+        """ # noqa: N803
+        logger.info(f"Invoking tool {toolName} with arguments: {arguments}")
+        func = self._tool_funcs.get(toolName)
         if not func:
-            error = {"error": f"Tool '{tool_name}' not found"}
+            error = {"error": f"Tool '{toolName}' not found"}
             logger.error(error["error"])
             return error
         try:
-            return await func(tool_args)
+            # The actual tool functions expect a dictionary named 'arguments'
+            return await func(arguments)
         except Exception as e:
-            logger.error(f"Error executing tool '{tool_name}': {e}")
+            logger.error(f"Error executing tool '{toolName}': {e}")
             return {"error": str(e)}
 
     async def run_stdio(self):

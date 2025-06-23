@@ -50,6 +50,7 @@ const translations = {
     moduleSearch: 'Semantic Search',
     moduleGenerate: 'Text Generation',
     moduleChat: 'Conversational Q&A',
+    moduleWechatDownloader: 'WeChat Downloader',
     
     // 按钮和操作
     refresh: 'Refresh',
@@ -349,6 +350,7 @@ const translations = {
     moduleSearch: '语义搜索',
     moduleGenerate: '文本生成',
     moduleChat: '对话式问答',
+    moduleWechatDownloader: '文章下载',
     
     // 按钮和操作
     refresh: '刷新',

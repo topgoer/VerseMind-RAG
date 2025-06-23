@@ -1,0 +1,37 @@
+
+version: '3.8'
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n  # 使用您原来的镜像地址
+    container_name: n8n             # 对应 --name n8n
+    restart: always                 # 推荐添加，确保容器意外退出后能自动重启
+    ports:
+      - "5678:5678"                 # 对应 -p 5678:5678
+    environment:
+      # 建议设置时区，以便定时任务能按预期时间执行
+      - GENERIC_TIMEZONE=Asia/Shanghai
+      
+      # 【新增】设置webhook URL使用host.docker.internal
+      # 这样从backend (非docker) 访问n8n (docker) 时URL会正确
+      - N8N_HOST=host.docker.internal
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      
+      # 其他可能的配置
+      - WEBHOOK_URL=http://host.docker.internal:5678
+      - N8N_EDITOR_BASE_URL=http://host.docker.internal:5678
+      
+    volumes:
+      # 对应 -v n8n_data:/home/node/.n8n，用于持久化工作流数据
+      - n8n_data:/home/node/.n8n
+
+      # 【新增配置】将本机文件夹映射到容器的/tmp目录
+      # 请确保 D:/n8n-local-files 这个文件夹在启动前已存在
+      # 在Windows下，路径请使用正斜杠 "/"
+      - D:/n8n-local-files:/tmp/
+
+volumes:
+  # 声明n8n_data卷，并指明它是已存在的外部卷
+  n8n_data:
+    external: true

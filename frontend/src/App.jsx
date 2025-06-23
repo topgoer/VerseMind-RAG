@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
+import WechatDownloader from './custom_components/WechatDownloader';
 import { useLanguage } from './contexts/LanguageContext';
 import { loadConfig } from './utils/configLoader';
 import logger from './utils/logger'; // Added import for logger
@@ -1793,6 +1794,23 @@ function App() {
           config={config}
           configLoading={configLoading}
         />
+        {/* 添加微信公众号下载组件 */}
+        {activeModule === 'wechat-downloader' && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">微信公众号文章下载</h2>
+                <button 
+                  onClick={() => handleModuleChange('conversational-qa')}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+              <WechatDownloader />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

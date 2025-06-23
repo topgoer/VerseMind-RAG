@@ -114,18 +114,55 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                     "id": request_id,
                     "result": {"tools": tool_attrs},
                 }
-            elif method == "callTool":  # Matches backup's handler
-                tool_name = params.get("name")  # Backup used "name"
-                tool_args = params.get("arguments", {})  # Backup used "arguments"
-                server = get_global_server()
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                tool_result = loop.run_until_complete(
-                    server.call_tool(tool_name, tool_args)
-                )
-                loop.close()
-                tool_body = _serialize_tool_result(tool_result)
-                result = {"jsonrpc": "2.0", "id": request_id, "result": tool_body}
+            elif method == "callTool":
+                logger.debug(f"callTool: received raw params: {json.dumps(params)}")
+                # Try to get tool_name from "toolName" first, then fall back to "name"
+                tool_name = params.get("toolName")
+                if not tool_name:
+                    tool_name = params.get("name") # Fallback to "name"
+                
+                tool_args = params.get("arguments", {})
+
+                if not tool_name:
+                    logger.error("callTool: 'toolName' or 'name' is missing or empty in request params.") # Updated log message
+                    result = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32602, "message": "Invalid params: 'toolName' or 'name' is missing or empty in request."}, # Updated error message
+                    }
+                else:
+                    logger.debug(f"callTool: extracted tool_name: '{tool_name}', tool_args: {json.dumps(tool_args)}")
+                    server = get_global_server()
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    # This is the direct result from VerseMindMCPServer.callTool
+                    # It can be a CallToolResult object on success, or a dict like {"error": "message"} on failure.
+                    raw_tool_result = loop.run_until_complete(
+                        server.callTool(tool_name, tool_args)
+                    )
+                    loop.close()
+
+                    if isinstance(raw_tool_result, dict) and "error" in raw_tool_result:
+                        # Handle errors returned by server.callTool (e.g., tool not found, execution error)
+                        error_message = raw_tool_result.get("error", "Unknown server error during tool execution.")
+                        logger.error(f"callTool: Error from server.callTool for '{tool_name}': {error_message}")
+                        result = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {"code": -32000, "message": error_message}, # Generic server error for tool issues
+                        }
+                    elif isinstance(raw_tool_result, CallToolResult):
+                        # Successful tool execution
+                        tool_body = _serialize_tool_result(raw_tool_result)
+                        result = {"jsonrpc": "2.0", "id": request_id, "result": tool_body}
+                    else:
+                        # Unexpected result type from server.callTool
+                        logger.error(f"callTool: Unexpected result type from server.callTool for '{tool_name}': {type(raw_tool_result)}")
+                        result = {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {"code": -32000, "message": "Internal server error: Unexpected tool result type."},
+                        }
             else:
                 result = {
                     "jsonrpc": "2.0",

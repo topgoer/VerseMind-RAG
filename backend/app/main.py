@@ -19,6 +19,7 @@ from app.api import (
     mcp,
     health,
     conversation,
+    n8n_router,
 )
 
 # Load environment variables from .env file
@@ -235,6 +236,9 @@ api_router.include_router(debug_storage.router, prefix="/debug", tags=["debug"])
 
 # 添加MCP路由
 api_router.include_router(mcp.router, prefix="/mcp", tags=["mcp"])
+
+# 添加N8N路由
+api_router.include_router(n8n_router.router, prefix="/n8n", tags=["n8n"])
 
 # 将路由添加到应用
 app.include_router(api_router, prefix="/api")

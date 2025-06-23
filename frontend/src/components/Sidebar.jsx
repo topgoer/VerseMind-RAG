@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { useLanguage } from '../contexts/LanguageContext';
 
 function Sidebar({ activeModule, onModuleChange }) {
@@ -14,6 +15,7 @@ function Sidebar({ activeModule, onModuleChange }) {
     { id: 'indexing', name: t('moduleIndexing'), icon: '📊' },
     { id: 'search', name: t('moduleSearch'), icon: '🔎' },
     { id: 'generate', name: t('moduleGenerate'), icon: '✨' },
+    { id: 'wechat-downloader', name: t('moduleWechatDownloader'), icon: '📱' },
   ];
 
   return (
@@ -50,5 +52,10 @@ function Sidebar({ activeModule, onModuleChange }) {
     </aside>
   );
 }
+
+Sidebar.propTypes = {
+  activeModule: PropTypes.string.isRequired,
+  onModuleChange: PropTypes.func.isRequired,
+};
 
 export default Sidebar;

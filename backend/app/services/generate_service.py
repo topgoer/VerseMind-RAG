@@ -51,6 +51,9 @@ class GenerateService:
         )
         logger.debug(f"Loaded OLLAMA_BASE_URL: '{self.ollama_base_url}'")
 
+        # Ollama configuration
+        # (Selection of provider is handled via the 'provider' parameter)
+
         # Create LLM service instances
         self.openai_llm = LLMService(api_key=self.openai_api_key, model_type="openai")
         self.deepseek_llm = LLMService(
