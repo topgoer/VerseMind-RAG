@@ -242,7 +242,7 @@ class VerseMindMCPServer:
                         )
                     ]
                 )
-        
+
         self._tool_funcs["list_indices"] = list_indices # Add this line
         logger.info("list_indices tool registered for custom dispatch.") # Optional: add a log
 
@@ -421,7 +421,7 @@ class VerseMindMCPServer:
         @self.server.call_tool()
         async def query_knowledge_base_with_llm(arguments: Dict[str, Any]) -> CallToolResult:
             """
-            Queries the knowledge base with a user's question, then uses the default LLM 
+            Queries the knowledge base with a user's question, then uses the default LLM
             to generate an answer based on the search results.
 
             Args:
@@ -481,7 +481,7 @@ class VerseMindMCPServer:
 
                 # Step 2: Generate answer using LLM with context
                 logger.info("Generating answer with LLM...")
-                
+
                 # Construct prompt for LLM
                 # You might want to refine this prompt engineering
                 prompt = f"Based on the following context, please answer the question.\n\nContext:\n{context}\n\nQuestion: {user_query}\n\nAnswer:"
@@ -496,7 +496,7 @@ class VerseMindMCPServer:
                     "stream": False
                     # Add other parameters like max_tokens, temperature if needed
                 }
-                
+
                 logger.debug(f"Sending to generation endpoint: {self.api_base}/generate/text with payload: {generation_payload}")
                 generation_response = requests.post(
                     f"{self.api_base}/generate/text", # Adjust if your generation endpoint is different
@@ -539,7 +539,7 @@ class VerseMindMCPServer:
                         TextContent(type="text", text=json.dumps(error_result, indent=2, ensure_ascii=False))
                     ]
                 )
-        
+
         self._tool_funcs["query_knowledge_base_with_llm"] = query_knowledge_base_with_llm
         logger.info("query_knowledge_base_with_llm tool registered.")
 

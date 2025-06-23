@@ -120,7 +120,7 @@ class MCPHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 tool_name = params.get("toolName")
                 if not tool_name:
                     tool_name = params.get("name") # Fallback to "name"
-                
+
                 tool_args = params.get("arguments", {})
 
                 if not tool_name:
